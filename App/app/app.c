@@ -1585,7 +1585,11 @@ void APP_TimeSlice500ms(void)
         if (--gKeyInputCountdown == 0)
         {
 
-            if (IS_MR_CHANNEL(gTxVfo->CHANNEL_SAVE) && (gInputBoxIndex > 0 && gInputBoxIndex < 4) && (!gFmRadioMode))
+            if (IS_MR_CHANNEL(gTxVfo->CHANNEL_SAVE) && (gInputBoxIndex > 0 && gInputBoxIndex < 4) && (true
+#ifdef ENABLE_FMRADIO
+                && !gFmRadioMode
+#endif
+                ))
             {
                 channelMoveSwitch();
 
@@ -2314,6 +2318,8 @@ Skip:
 
 #ifdef ENABLE_CW_MODULATOR
 		CW_KeyerReconfigure(gTxVfo->Modulation==MODULATION_CW);
+		gMonitor = (gRxVfo->Modulation == MODULATION_CW ||
+		            gRxVfo->Modulation == MODULATION_USB);
 #endif
 
 #ifdef ENABLE_NOAA

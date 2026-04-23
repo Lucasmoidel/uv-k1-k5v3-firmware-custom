@@ -28,6 +28,7 @@
 #include "functions.h"
 #include "helper/battery.h"
 #include "misc.h"
+#include "radio.h"
 #include "settings.h"
 #include "ui/battery.h"
 #include "ui/helper.h"
@@ -197,13 +198,21 @@ void UI_DisplayStatus()
         x += sizeof(gFontDWR) + 3;
     #endif
 
-#ifdef ENABLE_VOX
-    // VOX indicator
+#if defined(ENABLE_VOX) || defined(ENABLE_CW_MODULATOR)
+    // VOX / BK indicator — shared position
+    #ifdef ENABLE_CW_MODULATOR
+    if (gRxVfo->Modulation == MODULATION_CW && gEeprom.CW_BREAKIN_ENABLE) {
+        memcpy(line + x, gFontBK, sizeof(gFontBK));
+        x1 = x + sizeof(gFontBK) + 1;
+    } else
+    #endif
+    #ifdef ENABLE_VOX
     if (gEeprom.VOX_SWITCH) {
         memcpy(line + x, gFontVox, sizeof(gFontVox));
         x1 = x + sizeof(gFontVox) + 1;
     }
-    x += sizeof(gFontVox) + 3;
+    #endif
+    x += sizeof(gFontVox) + 3;  // same size for both (12 + 3 = 15)
 #endif
 
 #ifdef ENABLE_FEAT_F4HWN

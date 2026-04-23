@@ -157,6 +157,14 @@ const uint8_t BITMAP_USB_C[9] =
     };
 #endif
 
+#ifdef ENABLE_CW_MODULATOR
+    const uint8_t gFontBK[2][6] =
+    {
+        {0x00, 0x7F, 0x49, 0x49, 0x36, 0x00},  // B
+        {0x00, 0x7F, 0x14, 0x22, 0x41, 0x00},  // K
+    };
+#endif
+
 const uint8_t BITMAP_VFO_Lock[7] =
 {
     0b00111100,
