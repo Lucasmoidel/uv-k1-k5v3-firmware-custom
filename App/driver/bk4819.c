@@ -824,10 +824,12 @@ void BK4819_SetupSquelch(
     //
     BK4819_WriteRegister(BK4819_REG_78, ((uint16_t)SquelchOpenRSSIThresh   << 8) | SquelchCloseRSSIThresh);
 
-#ifdef ENABLE_CW_MODULATOR
-	if(gRxVfo->Modulation != MODULATION_CW)
-#endif		
-	BK4819_SetAF(BK4819_AF_MUTE);
+    // Always mute BK4819 AF output during squelch setup, including CW/SSB.
+    // The previous CW skip left the chip's audio output live, so the radio
+    // continued playing audio even after the firmware entered a squelch-gated
+    // state. The REG_70/REG_71 pop concern is handled above; BK4819_SetAF
+    // writes REG_47 which does not share that issue.
+    BK4819_SetAF(BK4819_AF_MUTE);
 
     BK4819_RX_TurnOn();
 }

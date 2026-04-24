@@ -838,10 +838,13 @@ void RADIO_SetupRegisters(bool switchToForeground)
         }
     #endif
 
-#ifdef ENABLE_CW_MODULATOR
-	if (gRxVfo->Modulation != MODULATION_CW)
-#endif
-	    AUDIO_AudioPathOff();
+    // Always mute the audio path during register setup, including CW/SSB.
+    // The previous CW skip prevented squelch from actually closing the audio
+    // when the user toggled monitor off. AUDIO_AudioPathOff controls the MCU-
+    // side PA enable GPIO; it does not cause the BK4819 register pop that was
+    // the concern behind the original skip (that pop came from REG_70, which
+    // is still handled separately in BK4819_SetupSquelch).
+    AUDIO_AudioPathOff();
     gEnableSpeaker = false;
 
     BK4819_ToggleGpioOut(BK4819_GPIO6_PIN2_GREEN, false);

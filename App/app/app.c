@@ -254,15 +254,12 @@ static void HandleIncoming(void)
     }
 #endif
 
-#ifdef ENABLE_CW_MODULATOR
-	gMonitorTemp = (gCurrentVfo->Modulation == MODULATION_CW ||
-			       gCurrentVfo->Modulation == MODULATION_USB);
-#endif
-    APP_StartListening(gMonitor
-#ifdef ENABLE_CW_MODULATOR
-			|| gMonitorTemp
-#endif
-		? FUNCTION_MONITOR : FUNCTION_RECEIVE);
+    // Use gMonitor as the sole source of truth. For CW/USB, gMonitor is set
+    // to true by default (open squelch) when the VFO is configured, but the
+    // user can toggle it off via ACTION_Monitor() to activate hardware squelch.
+    // Do NOT override gMonitor here based on modulation — that prevented the
+    // user's explicit "squelch on" choice from ever taking effect in CW/SSB.
+    APP_StartListening(gMonitor ? FUNCTION_MONITOR : FUNCTION_RECEIVE);
 }
 
 static void HandleReceive(void)
