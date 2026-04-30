@@ -1074,6 +1074,14 @@ void APP_Update(void)
         && gScanStateDir == SCAN_OFF
         && !gPttIsPressed
         && gCurrentFunction != FUNCTION_POWER_SAVE
+#ifdef ENABLE_CW_MODULATOR
+        // In CW/SSB monitor mode the user is intentionally listening to one
+        // channel.  Suppressing dual watch here prevents DualwatchAlternate
+        // from calling RADIO_SetupRegisters and closing the audio path, which
+        // would manifest as BK flashing and lost audio on every DW cycle.
+        && !(gMonitor && (gRxVfo->Modulation == MODULATION_CW ||
+                          gRxVfo->Modulation == MODULATION_USB))
+#endif
 #ifdef ENABLE_VOICE
         && gVoiceWriteIndex == 0
 #endif
@@ -1442,6 +1450,24 @@ void APP_TimeSlice10ms(void)
         SCREENSHOT_Update(false);
     }
     #endif
+
+#ifdef ENABLE_CW_MODULATOR
+    // One-shot boot trigger: open the audio path for CW/SSB monitor mode without
+    // waiting for a key event.  The gFlagReconfigureVfos path only runs inside
+    // ProcessKey (key events), so an explicit trigger here is needed at boot.
+    // We wait until after the display has drawn (we are past GUI_DisplayScreen)
+    // to avoid the lockup glitch that occurred when calling this before the
+    // main loop.  The static flag ensures this fires exactly once per power-on.
+    {
+        static bool s_boot_monitor_triggered = false;
+        if (!s_boot_monitor_triggered && gMonitor &&
+            gCurrentFunction != FUNCTION_MONITOR && !gReducedService)
+        {
+            s_boot_monitor_triggered = true;
+            ACTION_Monitor();
+        }
+    }
+#endif
 
     // Skipping authentic device checks
 

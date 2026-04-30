@@ -564,13 +564,8 @@ void RADIO_ConfigureSquelchAndOutputPower(VFO_Info_t *pInfo)
     // 0x1E60 : 0x1E00
     uint32_t Base = (Band < BAND4_174MHz) ? 0x010060 : 0x010000;
 
-    if (gEeprom.SQUELCH_LEVEL == 0
-	#ifdef ENABLE_CW_MODULATOR
-		|| pInfo->Modulation == MODULATION_CW
-		|| pInfo->Modulation == MODULATION_USB
-	#endif
-	)
-    {   // squelch == 0 (off)
+    if (gEeprom.SQUELCH_LEVEL == 0)
+    {   // squelch == 0 (off): all thresholds set so squelch is always open
         pInfo->SquelchOpenRSSIThresh    = 0;     // 0 ~ 255
         pInfo->SquelchOpenNoiseThresh   = 127;   // 127 ~ 0
         pInfo->SquelchCloseGlitchThresh = 255;   // 255 ~ 0
@@ -579,6 +574,43 @@ void RADIO_ConfigureSquelchAndOutputPower(VFO_Info_t *pInfo)
         pInfo->SquelchCloseNoiseThresh  = 127;   // 127 ~ 0
         pInfo->SquelchOpenGlitchThresh  = 255;   // 255 ~ 0
     }
+#ifdef ENABLE_CW_MODULATOR
+    else if (pInfo->Modulation == MODULATION_CW || pInfo->Modulation == MODULATION_USB)
+    {   // CW/SSB squelch >= 1: RSSI-only hardware squelch.
+        //
+        // The BK4819 noise and glitch measurements are derived from the FM
+        // discriminator output, which is bypassed in AF_BASEBAND2 mode. They
+        // return garbage values and would prevent the squelch from ever closing.
+        // Set them to non-interfering values so only RSSI controls the squelch.
+        //
+        // When gMonitor=true (CW/SSB default), the function dispatch is
+        // FUNCTION_NOP so these thresholds don't affect the always-open monitor
+        // behaviour. When the user toggles squelch on (gMonitor=false), the
+        // RSSI thresholds make the BK4819 fire SQUELCH_FOUND when the signal
+        // drops, allowing the state machine to close the audio path.
+        Base += gEeprom.SQUELCH_LEVEL;
+        PY25Q16_ReadBuffer(Base + 0x00, &pInfo->SquelchOpenRSSIThresh,  1);
+        PY25Q16_ReadBuffer(Base + 0x10, &pInfo->SquelchCloseRSSIThresh, 1);
+
+        // Noise: force to always-agree values so noise never prevents open or close
+        pInfo->SquelchOpenNoiseThresh   = 127;  // noise < 127 → always allows open
+        pInfo->SquelchCloseNoiseThresh  = 0;    // noise > 0   → always allows close
+
+        // Glitch: same — force non-interfering
+        pInfo->SquelchCloseGlitchThresh = 0;    // glitch > 0   → always allows close
+        pInfo->SquelchOpenGlitchThresh  = 255;  // glitch < 255 → always allows open
+
+#if ENABLE_SQUELCH_MORE_SENSITIVE
+        uint16_t rssi_open  = pInfo->SquelchOpenRSSIThresh;
+        uint16_t rssi_close = pInfo->SquelchCloseRSSIThresh;
+        rssi_open = (rssi_open * 1) / 2;
+        if (rssi_close == rssi_open && rssi_close >= 2)
+            rssi_close -= 2;
+        pInfo->SquelchOpenRSSIThresh  = (rssi_open  > 255) ? 255 : rssi_open;
+        pInfo->SquelchCloseRSSIThresh = (rssi_close > 255) ? 255 : rssi_close;
+#endif
+    }
+#endif
     else
     {   // squelch >= 1
         Base += gEeprom.SQUELCH_LEVEL;                                        // my eeprom squelch-1
@@ -817,11 +849,11 @@ void RADIO_SelectVfos(void)
     gRxVfo = &gEeprom.VfoInfo[gEeprom.RX_VFO];
 
     #ifdef ENABLE_CW_MODULATOR
-    if(gTxVfo->Modulation==MODULATION_CW)
-    {
-        CW_KeyerReconfigure(true);
-        gMonitor = true;
-    }
+    // Set gMonitor default for CW and USB/SSB: open squelch by default.
+    // CW_KeyerReconfigure is always called (false = deactivate when not CW).
+    CW_KeyerReconfigure(gTxVfo->Modulation == MODULATION_CW);
+    gMonitor = (gRxVfo->Modulation == MODULATION_CW ||
+                gRxVfo->Modulation == MODULATION_USB);
 #endif
 
     RADIO_SelectCurrentVfo();
