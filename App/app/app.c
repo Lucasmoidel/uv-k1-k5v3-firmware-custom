@@ -254,15 +254,12 @@ static void HandleIncoming(void)
     }
 #endif
 
-#ifdef ENABLE_CW_MODULATOR
-	gMonitorTemp = (gCurrentVfo->Modulation == MODULATION_CW ||
-			       gCurrentVfo->Modulation == MODULATION_USB);
-#endif
-    APP_StartListening(gMonitor
-#ifdef ENABLE_CW_MODULATOR
-			|| gMonitorTemp
-#endif
-		? FUNCTION_MONITOR : FUNCTION_RECEIVE);
+    // Use gMonitor as the sole source of truth. For CW/USB, gMonitor is set
+    // to true by default (open squelch) when the VFO is configured, but the
+    // user can toggle it off via ACTION_Monitor() to activate hardware squelch.
+    // Do NOT override gMonitor here based on modulation — that prevented the
+    // user's explicit "squelch on" choice from ever taking effect in CW/SSB.
+    APP_StartListening(gMonitor ? FUNCTION_MONITOR : FUNCTION_RECEIVE);
 }
 
 static void HandleReceive(void)
@@ -1077,6 +1074,14 @@ void APP_Update(void)
         && gScanStateDir == SCAN_OFF
         && !gPttIsPressed
         && gCurrentFunction != FUNCTION_POWER_SAVE
+#ifdef ENABLE_CW_MODULATOR
+        // In CW/SSB monitor mode the user is intentionally listening to one
+        // channel.  Suppressing dual watch here prevents DualwatchAlternate
+        // from calling RADIO_SetupRegisters and closing the audio path, which
+        // would manifest as BK flashing and lost audio on every DW cycle.
+        && !(gMonitor && (gRxVfo->Modulation == MODULATION_CW ||
+                          gRxVfo->Modulation == MODULATION_USB))
+#endif
 #ifdef ENABLE_VOICE
         && gVoiceWriteIndex == 0
 #endif
@@ -1446,6 +1451,24 @@ void APP_TimeSlice10ms(void)
     }
     #endif
 
+#ifdef ENABLE_CW_MODULATOR
+    // One-shot boot trigger: open the audio path for CW/SSB monitor mode without
+    // waiting for a key event.  The gFlagReconfigureVfos path only runs inside
+    // ProcessKey (key events), so an explicit trigger here is needed at boot.
+    // We wait until after the display has drawn (we are past GUI_DisplayScreen)
+    // to avoid the lockup glitch that occurred when calling this before the
+    // main loop.  The static flag ensures this fires exactly once per power-on.
+    {
+        static bool s_boot_monitor_triggered = false;
+        if (!s_boot_monitor_triggered && gMonitor &&
+            gCurrentFunction != FUNCTION_MONITOR && !gReducedService)
+        {
+            s_boot_monitor_triggered = true;
+            ACTION_Monitor();
+        }
+    }
+#endif
+
     // Skipping authentic device checks
 
 #ifdef ENABLE_FMRADIO
@@ -1585,7 +1608,11 @@ void APP_TimeSlice500ms(void)
         if (--gKeyInputCountdown == 0)
         {
 
-            if (IS_MR_CHANNEL(gTxVfo->CHANNEL_SAVE) && (gInputBoxIndex > 0 && gInputBoxIndex < 4) && (!gFmRadioMode))
+            if (IS_MR_CHANNEL(gTxVfo->CHANNEL_SAVE) && (gInputBoxIndex > 0 && gInputBoxIndex < 4) && (true
+#ifdef ENABLE_FMRADIO
+                && !gFmRadioMode
+#endif
+                ))
             {
                 channelMoveSwitch();
 
@@ -2314,6 +2341,8 @@ Skip:
 
 #ifdef ENABLE_CW_MODULATOR
 		CW_KeyerReconfigure(gTxVfo->Modulation==MODULATION_CW);
+		gMonitor = (gRxVfo->Modulation == MODULATION_CW ||
+		            gRxVfo->Modulation == MODULATION_USB);
 #endif
 
 #ifdef ENABLE_NOAA

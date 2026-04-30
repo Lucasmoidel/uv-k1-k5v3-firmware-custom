@@ -17,7 +17,7 @@
  // CW Macro system
 // Storage format: first byte = length (0xff = empty), remaining bytes = characters
 // Each character byte: bits 0-6 = character, bit 7 = space before character
-// Supported characters: A-Z, 0-9, '/', '?'
+// Supported characters: A-Z, 0-9, '/', '?', '.', ',', '=', '-'
 
 #ifndef APP_CWMACRO_H
 #define APP_CWMACRO_H

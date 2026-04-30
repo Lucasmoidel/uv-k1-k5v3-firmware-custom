@@ -44,8 +44,10 @@
 #define ENABLE_CEC_KEYER_DEBUG 0
 
 // Local state for last sampled paddles (edge detection)
-static bool s_last_dit = false;
-static bool s_last_dah = false;
+static bool     s_last_dit   = false;
+static bool     s_last_dah   = false;
+static uint32_t s_dit_count  = 0;  // consecutive raw-true reads for dit
+static uint32_t s_dah_count  = 0;  // consecutive raw-true reads for dah
 
 // Read button ring input (SIDE1)
 static void CW_ReadSideButton(bool *ring_out)
@@ -106,7 +108,7 @@ static void CW_ReadSideButton(bool *ring_out)
 
 // Generic GPIO deglitch function - reads with de-noise
 // Returns true if pin is active (low), false if inactive (high)
-static bool CW_ReadGpioDeglitched(GPIO_TypeDef *gpio_port, uint8_t pin_bit, bool heavy)
+static bool CW_ReadGpioDeglitched(GPIO_TypeDef *gpio_port, uint32_t pin_mask, bool heavy)
 {
     bool result = false;
     uint16_t reg = 0, reg2;
@@ -114,7 +116,6 @@ static bool CW_ReadGpioDeglitched(GPIO_TypeDef *gpio_port, uint8_t pin_bit, bool
     uint32_t limit = heavy ? 500 : 100; // more samples for heavy de-noise
     uint32_t goal = heavy ? 300 : 60;  // need this many stable samples
 
-    uint32_t pin_mask = (1U << pin_bit);
     for (i = 0, k = 0, reg = 0; i < goal && k < limit; i++, k++) {
         SYSTICK_DelayUs(1);
         // Read using LL helper: returns non-zero if pin input is set
@@ -249,7 +250,7 @@ bool CW_ReadKeysForMode(uint8_t mode, bool *dit_out, bool *dah_out)
     // Read port ring input if enabled and OR with button ring
     if (mode & CW_KEY_FLAG_PORT_RING) {
         // New hardware: port-ring is on PA13 (SWDIO when not used). Use deglitch helper on GPIOA bit 13.
-        bool port_ring = CW_ReadGpioDeglitched(GPIOA, 13, true);
+        bool port_ring = CW_ReadGpioDeglitched(GPIOA, LL_GPIO_PIN_13, true);
         hw_ring = hw_ring || port_ring;  // OR both sources
     }
     
@@ -276,14 +277,22 @@ void CW_ReadKeys(CW_Input *in)
         n_dah = false;
     }
 
-    // Compute edges
-    in->dit_rise = (!s_last_dit && n_dit);
-    in->dah_rise = (!s_last_dah && n_dah);
-    in->dit = n_dit;
-    in->dah = n_dah;
+    // Three-strike debounce: increment counter while raw line is active, reset on inactive.
+    if (n_dit) s_dit_count++; else s_dit_count = 0;
+    if (n_dah) s_dah_count++; else s_dah_count = 0;
 
-    s_last_dit = n_dit;
-    s_last_dah = n_dah;
+    // Debounced state: line is considered active only after 3 consecutive hits.
+    bool deb_dit = (s_dit_count >= 3);
+    bool deb_dah = (s_dah_count >= 3);
+
+    // Edges computed against previous debounced state.
+    in->dit_rise = (!s_last_dit && deb_dit);
+    in->dah_rise = (!s_last_dah && deb_dah);
+    in->dit = deb_dit;
+    in->dah = deb_dah;
+
+    s_last_dit = deb_dit;
+    s_last_dah = deb_dah;
 }
 
 // Configure port ground pin (PA10) for tip/ring paddle input

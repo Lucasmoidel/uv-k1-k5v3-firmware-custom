@@ -342,13 +342,12 @@ void FUNCTION_Select(FUNCTION_Type_t Function)
 				#endif
                     FUNCTION_Transmit();
     } else if (Function == FUNCTION_MONITOR) {
-        #ifdef ENABLE_CW_MODULATOR
-            if (!gMonitorTemp)
-                gMonitor = true;
-            gMonitorTemp = false;
-        #else
-            gMonitor = true;
-        #endif
+        // gMonitorTemp was previously set in HandleIncoming() to force monitor
+        // mode for CW/USB regardless of the user's gMonitor state. That logic
+        // has been removed — gMonitor is now the sole state keeper. Always set
+        // gMonitor=true here: we only reach FUNCTION_MONITOR when the user or
+        // the VFO-configure path explicitly wants open squelch.
+        gMonitor = true;
     }
 
     gBatterySaveCountdown_10ms = battery_save_count_10ms;

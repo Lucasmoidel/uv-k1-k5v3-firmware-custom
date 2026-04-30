@@ -35,6 +35,7 @@
 #include "misc.h"
 #include "radio.h"
 #include "settings.h"
+#include "driver/backlight.h"
 #include "driver/system.h"
 #include "driver/millis.h"
 #ifdef ENABLE_CODE_PRACTICE
@@ -66,7 +67,8 @@ void CW_EndTxNow(void)
 
 	RADIO_SetVfoState(VFO_STATE_NORMAL);  // only variables
     RADIO_SelectVfos();                   // only variables
-    APP_StartListening(FUNCTION_MONITOR);  // does AudioPathOn
+    if (gMonitor)
+        APP_StartListening(FUNCTION_MONITOR);
 }
 
 // ---------------------------------------------------------------------------
@@ -108,6 +110,11 @@ void CW_AppUpdate(void)
 		switch (action)
 		{
 			case CW_ACTION_CARRIER_ON:
+				if (gCW_State == CW_INACTIVE && !AUDIO_IsAudioPathOn()) {
+					AUDIO_AudioPathOn();
+					SYSTEM_DelayMs(10);
+				}
+				BACKLIGHT_TurnOn();
 				BK4819_SetAF(BK4819_AF_ALAM);
 				BK4819_WriteRegister(BK4819_REG_70,
 					BK4819_REG_70_ENABLE_TONE1 |
@@ -148,10 +155,15 @@ void CW_AppUpdate(void)
 		case CW_ACTION_CARRIER_ON:
 			gTxTimerCountdown_500ms = 0;
 			gCW_TxDisplayHoldoff_10ms = 200;
-			gPttIsPressed = true;  // makes backlight come on, among other things
+			gPttIsPressed = true;
+			BACKLIGHT_TurnOn();
 
 			if (gCW_State == CW_INACTIVE)
 			{
+				if (!AUDIO_IsAudioPathOn()) {
+					AUDIO_AudioPathOn();
+					SYSTEM_DelayMs(20);
+				}
 				RADIO_PrepareTX();
 			}
 			else if (gCW_State == CW_SUSPENDED) {

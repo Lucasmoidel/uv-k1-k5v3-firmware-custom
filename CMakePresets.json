@@ -200,8 +200,8 @@
             "name": "CW",
             "inherits": "default",
             "cacheVariables": {
-                "EDITION_STRING": "NR7Y-CW-b1",
-                "TARGET": "nr7y-beta1.cw",
+                "EDITION_STRING": "NR7Y-CW-b2",
+                "TARGET": "nr7y-beta2.cw",
                 "ENABLE_FMRADIO": false,
                 "ENABLE_FEAT_F4HWN_GMRS_FRS_MURS": false,
                 "ENABLE_FEAT_NR7Y_CW": true,

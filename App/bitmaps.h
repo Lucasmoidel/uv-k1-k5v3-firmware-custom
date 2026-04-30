@@ -35,6 +35,10 @@ extern const uint8_t BITMAP_NotReady[7];
     extern const uint8_t gFontVox[2][6];
 #endif
 
+#ifdef ENABLE_CW_MODULATOR
+    extern const uint8_t gFontBK[2][6];
+#endif
+
 extern const uint8_t BITMAP_VFO_Default[7];
 extern const uint8_t BITMAP_VFO_NotDefault[7];
 extern const uint8_t BITMAP_VFO_Empty[7];

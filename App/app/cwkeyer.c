@@ -73,6 +73,7 @@ static uint16_t       s_ext_gap_count = 0;       // tick count when auto-char ex
 static uint16_t       s_char_gap_count = 0;  // inter-char gap in ticks (3 dits)
 static uint16_t       s_word_gap_count = 0;  // inter-word gap in ticks (7 dits)
 static uint32_t       s_elem_start_count = 0;// element start counter (32-bit millis)
+static uint16_t       s_elem_deadline_extra_ms = 0; // extra ms added to first-element deadline when audio path must be opened
 static bool           s_active_is_dit = false;
 static bool           s_pending_alternate = false; // alternate element queued
 /* last sampled paddles moved to app/cwhardware.c */
@@ -619,6 +620,7 @@ CW_Action_t CW_HandleState(void)
 
             s_pending_alternate = false;
             s_elem_start_count = cur_count;
+            s_elem_deadline_extra_ms = AUDIO_IsAudioPathOn() ? 0 : 20;
             s_KeyerFSMState = CWK_STATE_ACTIVE_ELEMENT;
 #if CW_KEYER_DEBUG
             UART_Send("keyer going active\r\n", 20);
@@ -676,7 +678,8 @@ CW_Action_t CW_HandleState(void)
             }
         }
 
-        if (elapsed_elem >= target) {
+        if (elapsed_elem >= target + s_elem_deadline_extra_ms) {
+            s_elem_deadline_extra_ms = 0;
             action = CW_ACTION_CARRIER_OFF;
             s_elem_start_count = cur_count;
 #if CW_KEYER_DEBUG

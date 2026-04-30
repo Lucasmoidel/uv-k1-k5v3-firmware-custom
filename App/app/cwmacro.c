@@ -78,10 +78,13 @@ static const MorseCode_t MORSE_TABLE[] = {
 	{'8', 5, 0b00111},     // ---..
 	{'9', 5, 0b01111},    // ----.
 	// Punctuation
-	{'/', 5, 0b01001},    // -..-.
-	{'?', 6, 0b001100},    // ..--..
+	{'/', 5, 0b01001},    // -..-.  DN
+	{'?', 6, 0b001100},   // ..--..  IM
+	{'.', 6, 0b101010},   // .-.-.-  AAA
+	{',', 6, 0b110011},   // --..--  MIM
+	{'=', 5, 0b10001},    // -...-   BT
+	{'-', 6, 0b100001},   // -....-  BA
 };
-
 #define MORSE_TABLE_SIZE (sizeof(MORSE_TABLE) / sizeof(MORSE_TABLE[0]))
 
 // Encoder state machine
@@ -115,12 +118,12 @@ static const uint16_t MACRO_ADDRS[CW_MACRO_COUNT] = {
 
 bool CW_ValidateChar(char ch)
 {
-	// Valid characters: A-Z, 0-9, '/', '?'
+	// Valid characters: A-Z, 0-9, '/', '?', '.', ',', '=', '-'
 	if (ch >= 'A' && ch <= 'Z')
 		return true;
 	if (ch >= '/' && ch <= '9')  // '/' to '9' are contiguous in ASCII
 		return true;
-	if (ch == '?')
+	if (ch == '?' || ch == '.' || ch == ',' || ch == '=' || ch == '-')
 		return true;
 	return false;
 }

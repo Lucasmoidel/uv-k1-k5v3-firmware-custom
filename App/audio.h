@@ -51,6 +51,8 @@ void AUDIO_PlayBeep(BEEP_Type_t Beep);
 
 #define AUDIO_AudioPathOff() GPIO_DisableAudioPath()
 
+#define AUDIO_IsAudioPathOn() (!!LL_GPIO_IsOutputPinSet(GPIO_PORT(GPIO_PIN_AUDIO_PATH), GPIO_PIN_MASK(GPIO_PIN_AUDIO_PATH)))
+
 #ifdef ENABLE_VOICE
     typedef enum VOICE_ID_t  VOICE_ID_t;
 
