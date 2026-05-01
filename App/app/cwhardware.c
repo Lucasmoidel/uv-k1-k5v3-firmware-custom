@@ -38,7 +38,7 @@
 
 // Local debug toggle for CW hardware reads
 #ifndef ENABLE_CW_HARDWARE_DEBUG
-#define ENABLE_CW_HARDWARE_DEBUG 1
+#define ENABLE_CW_HARDWARE_DEBUG 0
 #endif
 
 #define ENABLE_CEC_KEYER_DEBUG 0
