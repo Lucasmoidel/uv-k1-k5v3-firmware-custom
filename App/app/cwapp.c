@@ -102,7 +102,7 @@ void CW_AppUpdate(void)
 
 	// ---- local-only sidetone path (no RF) ----
 	// Used when recording a macro, reading ADC, breakin disabled, or code practice
-	if (gCW_Recording || gCW_AdcReadActive || !gEeprom.CW_BREAKIN_ENABLE
+	if (gCW_Recording || !gEeprom.CW_BREAKIN_ENABLE
 #ifdef ENABLE_CODE_PRACTICE
 		|| gCW_CpoActive
 #endif

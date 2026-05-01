@@ -202,11 +202,6 @@ const t_menu_item MenuList[] =
 #endif
     {"BatCal",      MENU_BATCAL        }, // battery voltage calibration
     {"BatTyp",      MENU_BATTYP        }, // battery type 1600/2200mAh
-	#ifdef ENABLE_CW_MODULATOR
-	{"CWcrd",       MENU_CW_CRD        },
-	{"CWcLo",       MENU_CW_ADC_LO_20K },
-	{"CWcHi",       MENU_CW_ADC_HI_10K },
-	#endif
     {"SetNav",      MENU_SET_NAV       }, // set navigation (LEFT / RIGHT or UP / DOWN)
     {"Reset",       MENU_RESET         }, // might be better to move this to the hidden menu items ?
 
@@ -554,8 +549,6 @@ const char* gSubMenu_CW_KEY_INPUT[] =
 	"PTT+TIP\ndit\nRING\ndah",
 	"PTT+TIP\ndah\nSD1+RING\ndit",
 	"PTT+TIP\ndit\nSD1+RING\ndah",
-	// "CEC\nCable",
-	// "CEC\nCable\nReversed"
 };
 
 const char* gSubMenu_CW_MSG[] =
@@ -1257,22 +1250,6 @@ void UI_DisplayMenu(void)
 			}
 			break;
 
-		case MENU_CW_ADC_LO_20K:
-			sprintf(String, "%u", gSubMenuSelection);
-			break;
-
-		case MENU_CW_ADC_HI_10K:
-			sprintf(String, "%u", gSubMenuSelection);
-			break;
-
-		case MENU_CW_CRD:
-			if (gIsInSubMenu) {
-				uint16_t adc = CW_ReadCH3();
-				sprintf(String, "%u", adc);
-			} else {
-				strcpy(String, "ADC\nRead\nCheck");
-			}
-			break;
 #endif
 #ifdef ENABLE_FEAT_F4HWN_SLEEP
         case MENU_SET_OFF:

@@ -1650,11 +1650,6 @@ void APP_TimeSlice500ms(void)
 		if (gCW_Recording) {
 			gMenuCountdown = menu_timeout_500ms;  // Keep resetting the timer
 			gBacklightCountdown_500ms = 2; // keep backlight on
-		} else if (gScreenToDisplay == DISPLAY_MENU && gIsInSubMenu
-				   && UI_MENU_GetCurrentMenuId() == MENU_CW_CRD) {
-			gMenuCountdown = menu_timeout_500ms;  // Keep resetting the timer
-			gBacklightCountdown_500ms = 2; // keep backlight on
-			gUpdateDisplay = true; // refresh CW ADC readout every 500ms
 		} else
 #endif
         if (--gMenuCountdown == 0)

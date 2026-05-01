@@ -133,8 +133,6 @@ static void CW_KeyerDeinit()
 {
     CW_KeyerResetRuntime();
 
-    // ADC deinit performs the port ground deinit too
-    CW_ConfigureADCforCECPaddles(false);
     CW_ConfigurePortRing(false); // make sure PB15 is an input with no pullup, to avoid affecting the line if shorted to mic (keyer rework)
 
     gCW_KeyerManagesPtt = false;
@@ -207,11 +205,9 @@ static void CW_KeyerInit()
 
     bool uses_port_ground = (key_input_mode & CW_KEY_FLAG_PORT_GROUND) != 0;
     bool uses_port_ring   = (key_input_mode & CW_KEY_FLAG_PORT_RING) != 0;
-    bool uses_adc         = (key_input_mode & CW_KEY_FLAG_ADC) != 0;
 
     CW_ConfigurePortRing(uses_port_ring);
-    CW_ConfigureADCforCECPaddles(uses_adc);
-    if (!uses_adc && uses_port_ground)
+    if (uses_port_ground)
         CW_ConfigurePortGround(true);
 
     gCW_KeyerUsingSD1 = (key_input_mode & CW_KEY_FLAG_SIDE1) != 0;
@@ -429,10 +425,9 @@ bool CW_CheckKeyerInputs(uint8_t new_mode)
     // Determine if we need to configure port pins for this mode (use bit flags)
     bool uses_port_ground = (new_mode & CW_KEY_FLAG_PORT_GROUND);
     bool uses_port_ring = (new_mode & CW_KEY_FLAG_PORT_RING);
-    bool uses_adc = (new_mode & CW_KEY_FLAG_ADC);
 
     // Button-only modes don't need validation (no port pins to check)
-    if (!uses_port_ground && !uses_port_ring && !uses_adc) {
+    if (!uses_port_ground && !uses_port_ring) {
         return true;
     }
     
@@ -453,12 +448,6 @@ bool CW_CheckKeyerInputs(uint8_t new_mode)
         UART_Send("Configuring port ring for CW keyer check\r\n", 42);
 #endif
         CW_ConfigurePortRing(uses_port_ring);
-        
-    } else if(uses_adc) {
-#if CW_KEYER_DEBUG
-        UART_Send("Configuring ADC for CW keyer check\r\n", 38);
-#endif
-        CW_ConfigureADCforCECPaddles(true);
     }
 
     // Allow pins to stabilize after configuration
