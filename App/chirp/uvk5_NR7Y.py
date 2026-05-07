@@ -46,8 +46,6 @@ CW_KEY_INPUT_MODES = [
     "PTT+Tip dit, Ring dah",          # 5: 0x13
     "Both dah, Both dit",             # 6: 0x16
     "Both dit, Both dah",             # 7: 0x17
-    "CEC (PTT dah, Tip dit)",         # 8: 0x20 - NEW beta3
-    "CEC (PTT dit, Tip dah)"          # 9: 0x21 - NEW beta3
 ]
 # Complete programmable key actions list from firmware (settings.h:105-127)
 # Beta3 extends with repeat actions - synced with firmware beta3
