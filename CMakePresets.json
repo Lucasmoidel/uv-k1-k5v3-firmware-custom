@@ -200,8 +200,10 @@
             "name": "CW",
             "inherits": "default",
             "cacheVariables": {
-                "EDITION_STRING": "NR7Y-CW-b2",
-                "TARGET": "nr7y-beta2.cw",
+                "EDITION_STRING": "F4WHN 5.4.1",
+                "TARGET": "nr7y.cw",                
+                "VERSION_STRING_1": "v5.4.0",
+                "VERSION_STRING_2": "v1-beta3",
                 "ENABLE_FMRADIO": false,
                 "ENABLE_FEAT_F4HWN_GMRS_FRS_MURS": false,
                 "ENABLE_FEAT_NR7Y_CW": true,
