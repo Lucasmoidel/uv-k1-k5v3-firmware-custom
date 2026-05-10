@@ -205,7 +205,7 @@
             "name": "CW",
             "inherits": "default",
             "cacheVariables": {
-                "EDITION_STRING": "F4WHN 5.4.1",
+                "EDITION_STRING": "F4HWN 5.4.1",
                 "TARGET": "nr7y.cw",                
                 "VERSION_STRING_1": "v5.4.0",
                 "VERSION_STRING_2": "v1-beta3",
@@ -221,7 +221,8 @@
                 "ENABLE_FEAT_F4HWN_AUDIO": true,
                 "ENABLE_SWD": false,
                 "ENABLE_TX_WHEN_AM": true,
-                "ENABLE_F_CAL_MENU": true
+                "ENABLE_F_CAL_MENU": true,
+                "ENABLE_EXTRA_FILTER": true
             }
         }
     ],

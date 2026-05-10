@@ -1092,10 +1092,21 @@ void SETTINGS_SaveChannel(uint16_t Channel, uint8_t VFO, const VFO_Info_t *pVFO,
         State -> _8[2] = (pVFO->freq_config_TX.CodeType << 4) | pVFO->freq_config_RX.CodeType;
         State -> _8[3] = (pVFO->Modulation << 4) | pVFO->TX_OFFSET_FREQUENCY_DIRECTION;
         State -> _8[4] = 0
+#ifdef ENABLE_EXTRA_FILTER
+            // For CW/SSB, bit 6 encodes NARROWEST instead of TX_LOCK.
+            | (((pVFO->Modulation == MODULATION_CW || pVFO->Modulation == MODULATION_USB)
+                    ? (pVFO->CHANNEL_BANDWIDTH == BANDWIDTH_NARROWEST ? 1u : 0u)
+                    : (pVFO->TX_LOCK & 1u)) << 6)
+#else
             | (pVFO->TX_LOCK << 6)
+#endif
             | (pVFO->BUSY_CHANNEL_LOCK << 5)
             | (pVFO->OUTPUT_POWER      << 2)
+#ifdef ENABLE_EXTRA_FILTER
+            | ((pVFO->CHANNEL_BANDWIDTH == BANDWIDTH_NARROWEST ? BANDWIDTH_NARROW : pVFO->CHANNEL_BANDWIDTH) << 1)
+#else
             | (pVFO->CHANNEL_BANDWIDTH << 1)
+#endif
             | (pVFO->FrequencyReverse  << 0);
         State -> _8[5] = ((pVFO->DTMF_PTT_ID_TX_MODE & 7u) << 1)
 #ifdef ENABLE_DTMF_CALLING

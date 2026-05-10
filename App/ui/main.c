@@ -2000,23 +2000,31 @@ void UI_DisplayMain(void)
         #else
             if (gSetting_set_gui)
             {
+#ifdef ENABLE_EXTRA_FILTER
+                const char *bandWidthNames[] = {"W", "N", "2k"};
+                UI_PrintStringSmallNormal(bandWidthNames[vfoInfo->CHANNEL_BANDWIDTH], LCD_WIDTH + 80, 0, line + 1);
+#else
                 const char *bandWidthNames[] = {"W", "N"};
                 UI_PrintStringSmallNormal(bandWidthNames[vfoInfo->CHANNEL_BANDWIDTH], LCD_WIDTH + 80, 0, line + 1);
+#endif
             }
             else
             {
+#ifdef ENABLE_EXTRA_FILTER
+                const char *bandWidthNames[] = {"WIDE", "NAR", "2k"};
+                GUI_DisplaySmallest(bandWidthNames[vfoInfo->CHANNEL_BANDWIDTH], 91, line == 0 ? 17 : 49, false, true);
+#else
                 const char *bandWidthNames[] = {"WIDE", "NAR"};
                 GUI_DisplaySmallest(bandWidthNames[vfoInfo->CHANNEL_BANDWIDTH], 91, line == 0 ? 17 : 49, false, true);
+#endif
             }
         #endif
 #else
         if (vfoInfo->CHANNEL_BANDWIDTH == BANDWIDTH_NARROW)
             UI_PrintStringSmallNormal("N", LCD_WIDTH + 70, 0, line + 1);
-#ifdef ENABLE_EXTRA_FILTER		
-        else if (vfoInfo->CHANNEL_BANDWIDTH == BANDWIDTH_6K)
-			UI_PrintStringSmallNormal("6k", LCD_WIDTH + 70, 0, line + 1);
-		else if (vfoInfo->CHANNEL_BANDWIDTH == BANDWIDTH_1p7K)
-			UI_PrintStringSmallNormal("1.7k", LCD_WIDTH + 70, 0, line + 1);
+#ifdef ENABLE_EXTRA_FILTER
+		else if (vfoInfo->CHANNEL_BANDWIDTH == BANDWIDTH_NARROWEST)
+			UI_PrintStringSmallNormal("2k", LCD_WIDTH + 70, 0, line + 1);
 #endif
 #endif
 

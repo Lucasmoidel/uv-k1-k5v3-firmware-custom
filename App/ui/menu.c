@@ -235,9 +235,8 @@ const char gSubMenu_W_N[][7] =
 {
 	"25k FM",
 	"12k FM",
-	"N 6k",
 #ifdef ENABLE_EXTRA_FILTER
-	"N 1.7k"
+	"N 2k"
 #endif
 };
 

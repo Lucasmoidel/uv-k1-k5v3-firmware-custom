@@ -394,14 +394,22 @@ void RADIO_ConfigureChannel(const unsigned int VFO, const unsigned int configure
         {
             const uint8_t d4 = data[4];
             pVfo->FrequencyReverse  = !!((d4 >> 0) & 1u);
-			#ifdef ENABLE_EXTRA_FILTER
-				pVfo->CHANNEL_BANDWIDTH =   ((d4 >> 5) & 3u);
-			#else
-	            pVfo->CHANNEL_BANDWIDTH = !!((d4 >> 1) & 1u);
-			#endif
+            pVfo->CHANNEL_BANDWIDTH = !!((d4 >> 1) & 1u);  // WIDE=0, NARROW=1
             pVfo->OUTPUT_POWER      =   ((d4 >> 2) & 7u);
             pVfo->BUSY_CHANNEL_LOCK = !!((d4 >> 5) & 1u);
-            pVfo->TX_LOCK           = !!((d4 >> 6) & 1u);
+			#ifdef ENABLE_EXTRA_FILTER
+				// For CW/SSB, bit 6 encodes NARROWEST instead of TX_LOCK
+				// (TX_LOCK is inapplicable to those modes).
+				if ((pVfo->Modulation == MODULATION_CW || pVfo->Modulation == MODULATION_USB)
+				    && ((d4 >> 6) & 1u)) {
+					pVfo->CHANNEL_BANDWIDTH = BANDWIDTH_NARROWEST;
+					pVfo->TX_LOCK = false;
+				} else {
+					pVfo->TX_LOCK = !!((d4 >> 6) & 1u);
+				}
+			#else
+            	pVfo->TX_LOCK = !!((d4 >> 6) & 1u);
+			#endif
         }
 
         if (data[5] == 0xFF)
@@ -868,6 +876,11 @@ void RADIO_SetupRegisters(bool switchToForeground)
                     BK4819_SetFilterBandwidth(Bandwidth, false);
                 #endif
                 break;
+#ifdef ENABLE_EXTRA_FILTER
+            case BK4819_FILTER_BW_NARROWEST:
+                BK4819_SetFilterBandwidth(BK4819_FILTER_BW_NARROWEST, false);
+                break;
+#endif
         }
     }
 
@@ -1114,8 +1127,8 @@ void RADIO_SetTxParameters(void)
 			#endif
 			break;
 	#ifdef ENABLE_EXTRA_FILTER
-		case BK4819_FILTER_BW_1p7K:
-			BK4819_SetFilterBandwidth(BK4819_FILTER_BW_1p7K, false);
+		case BK4819_FILTER_BW_NARROWEST:
+			BK4819_SetFilterBandwidth(BK4819_FILTER_BW_NARROWEST, false);
 			break;
 	#endif
 	}	
