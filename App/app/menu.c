@@ -479,6 +479,12 @@ int MENU_GetLimits(uint8_t menu_id, int32_t *pMin, int32_t *pMax)
             //*pMin = 0;
             *pMax = ARRAY_SIZE(gSubMenu_SET_MET) - 1;
             break;
+        #ifdef ENABLE_FEAT_F4HWN_SCAN_FASTER
+        case MENU_SET_SCN:
+            //*pMin = 0;
+            *pMax = ARRAY_SIZE(gSubMenu_SET_SCN) - 1;
+            break;
+        #endif
         #ifdef ENABLE_FEAT_F4HWN_AUDIO
         case MENU_SET_AUD:
             //*pMin = 0;
@@ -853,7 +859,7 @@ void MENU_AcceptSetting(void)
         case MENU_D_LIVE_DEC:
             gSetting_live_DTMF_decoder = gSubMenuSelection;
             gDTMF_RX_live_timeout = 0;
-            memset(gDTMF_RX_live, 0, sizeof(gDTMF_RX_live));
+            DTMF_clear_input_box_memory();
             if (!gSetting_live_DTMF_decoder)
                 BK4819_DisableDTMF();
             gFlagReconfigureVfos     = true;
@@ -1042,6 +1048,11 @@ void MENU_AcceptSetting(void)
         case MENU_SET_GUI:
             gSetting_set_gui = gSubMenuSelection;
             break;
+        #ifdef ENABLE_FEAT_F4HWN_SCAN_FASTER
+        case MENU_SET_SCN:
+            gSetting_set_scn = gSubMenuSelection;
+            break;
+        #endif
         #ifdef ENABLE_FEAT_F4HWN_AUDIO
         case MENU_SET_AUD:
             if(gTxVfo->Modulation == MODULATION_AM)
@@ -1605,6 +1616,11 @@ void MENU_ShowCurrentSetting(void)
         case MENU_SET_GUI:
             gSubMenuSelection = gSetting_set_gui;
             break;
+        #ifdef ENABLE_FEAT_F4HWN_SCAN_FASTER
+        case MENU_SET_SCN:
+            gSubMenuSelection = gSetting_set_scn;
+            break;
+        #endif
         #ifdef ENABLE_FEAT_F4HWN_AUDIO
         case MENU_SET_AUD:
             if(gTxVfo->Modulation == MODULATION_AM)
@@ -1691,6 +1707,13 @@ static const char* const char_map[10] = {
     "tuv8",                         // KEY_8
     "wxyz9"                         // KEY_9
 };
+
+static bool MENU_IsEditingName() {
+    return !gCssBackgroundScan
+        && UI_MENU_GetCurrentMenuId() == MENU_MEM_NAME
+        && gIsInSubMenu
+        && edit_index >= 0;
+}
 
 static void MENU_Key_0_to_9(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
 {
@@ -1893,12 +1916,7 @@ static void MENU_Key_0_to_9(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
 
 static void MENU_Key_EXIT(bool bKeyPressed, bool bKeyHeld)
 {
-    const bool editing_name = !gCssBackgroundScan
-        && UI_MENU_GetCurrentMenuId() == MENU_MEM_NAME
-        && gIsInSubMenu
-        && edit_index >= 0;
-
-    if (editing_name)
+    if (MENU_IsEditingName())
     {
         if (!bKeyPressed)
         {
@@ -2017,9 +2035,9 @@ Skip:
 
 static void MENU_Key_MENU(const bool bKeyPressed, const bool bKeyHeld)
 {
-    if (bKeyHeld || !bKeyPressed)
+    if (!bKeyPressed || (bKeyHeld && (!MENU_IsEditingName() || gAskForConfirmation)))
         return;
-
+    
     gBeepToPlay           = BEEP_1KHZ_60MS_OPTIONAL;
     gRequestDisplayScreen = DISPLAY_MENU;
 
@@ -2103,8 +2121,12 @@ static void MENU_Key_MENU(const bool bKeyPressed, const bool bKeyHeld)
         {   // editing the channel name characters
             edit_last_key = 255;
 
-            if (++edit_index < 10)
-                return; // next char
+            if (bKeyHeld) {
+                edit_index = 10;
+            }
+            else if (++edit_index < 10) {
+                return;
+            }
 
             // exit
             gFlagAcceptSetting  = false;
@@ -2253,22 +2275,17 @@ static void MENU_Key_UP_DOWN(bool bKeyPressed, bool bKeyHeld, int8_t Direction)
     uint16_t Channel;
     bool    bCheckScanList;
 
+    if (!bKeyPressed)
+        return;
+
+    if (!bKeyHeld) {
+        gInputBoxIndex = 0;
+        gBeepToPlay = BEEP_1KHZ_60MS_OPTIONAL;
+    }
+
     if (!gEeprom.SET_NAV && gIsInSubMenu) {
         Direction = -Direction;
     }
-
-    if (!bKeyHeld)
-    {
-        if (!bKeyPressed)
-            return;
-
-        gBeepToPlay = BEEP_1KHZ_60MS_OPTIONAL;
-
-        gInputBoxIndex = 0;
-    }
-    else
-    if (!bKeyPressed)
-        return;
 
     if (UI_MENU_GetCurrentMenuId() == MENU_MEM_NAME && gIsInSubMenu && edit_index >= 0)
     {   // change the character
