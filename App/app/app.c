@@ -1177,7 +1177,7 @@ void APP_Update(void)
             BK4819_Conditional_RX_TurnOn_and_GPIO6_Enable();
 
 #ifdef ENABLE_VOX
-            if (gEeprom.VOX_SWITCH)
+            if (gEeprom.VOX_SWITCH && gCurrentVfo->Modulation == MODULATION_FM)
                 BK4819_EnableVox(gEeprom.VOX1_THRESHOLD, gEeprom.VOX0_THRESHOLD);
 #endif
 

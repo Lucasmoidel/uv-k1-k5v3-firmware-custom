@@ -212,7 +212,7 @@ void UI_DisplayStatus()
     } else
     #endif
     #ifdef ENABLE_VOX
-    if (gEeprom.VOX_SWITCH) {
+    if (gEeprom.VOX_SWITCH && gRxVfo->Modulation != MODULATION_CW) {
         memcpy(line + x, gFontVox, sizeof(gFontVox));
         x1 = x + sizeof(gFontVox) + 1;
     }

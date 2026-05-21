@@ -344,11 +344,15 @@ void ACTION_SwitchDemodul(void)
 
 void ACTION_SwitchFilter(void)
 {
-	gRequestSaveChannel = 1;
-
 	gTxVfo->CHANNEL_BANDWIDTH++;
-    if(gTxVfo->CHANNEL_BANDWIDTH == BK4819_FILTER_BW_UNKNOWN)
-		gTxVfo->CHANNEL_BANDWIDTH = BK4819_FILTER_BW_WIDE;
+#ifdef ENABLE_EXTRA_FILTER
+	if (gTxVfo->CHANNEL_BANDWIDTH > BANDWIDTH_NARROWEST)
+#else
+	if (gTxVfo->CHANNEL_BANDWIDTH > BANDWIDTH_NARROW)
+#endif
+		gTxVfo->CHANNEL_BANDWIDTH = BANDWIDTH_WIDE;
+	gRequestSaveChannel  = 1;
+	gFlagReconfigureVfos = true;
 }
 
 
