@@ -3651,7 +3651,7 @@ class UVK5_NR7Y_Fusion(UVK5RadioEgzumer):
         try:
             wpm = self._get_cw_wpm()
             cw.append(RadioSetting("cw_wpm", "Keyer Speed (WPM)",
-                                   RadioSettingValueInteger(10, 30, wpm)))
+                                   RadioSettingValueInteger(10, 40, wpm)))
         except Exception as e:
             LOG.error("CW WPM: %s", e)
 
@@ -3847,20 +3847,20 @@ class UVK5_NR7Y_Fusion(UVK5RadioEgzumer):
             b &= 0x7F
         self._mmap_set(_NR7Y_CW_SETTINGS_ADDR + 1, b)
 
-    # -- Keyer speed (bits 0-5 of CW byte 1) --
+    # -- Keyer speed (bits 0-6 of CW byte 1) --
 
     def _get_cw_wpm(self):
-        """Return WPM (10-30)."""
+        """Return WPM (10-40)."""
         b = self._mmap_byte(_NR7Y_CW_SETTINGS_ADDR + 1)
         if b == 0xFF:
             return 18  # Default 18 WPM
-        wpm = b & 0x3F
-        return wpm if 10 <= wpm <= 30 else 18
+        wpm = b & 0x7F
+        return wpm if 10 <= wpm <= 40 else 18
 
     def _set_cw_wpm(self, wpm):
-        wpm = max(10, min(30, int(wpm)))
+        wpm = max(10, min(40, int(wpm)))
         b = self._mmap_byte(_NR7Y_CW_SETTINGS_ADDR + 1)
-        self._mmap_set(_NR7Y_CW_SETTINGS_ADDR + 1, (b & 0x80) | (wpm & 0x3F))
+        self._mmap_set(_NR7Y_CW_SETTINGS_ADDR + 1, (b & 0x80) | (wpm & 0x7F))
 
     # -- Key input mode (bits 0-4 of CW byte 2) --
 
