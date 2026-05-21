@@ -411,7 +411,7 @@ int MENU_GetLimits(uint8_t menu_id, int32_t *pMin, int32_t *pMax)
 
 		case MENU_CW_KEY_WPM:
 			*pMin = 10;
-			*pMax = 30;
+			*pMax = 40;
 			break;
 
 		case MENU_CW_KEY_INPUT:
