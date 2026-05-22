@@ -1356,14 +1356,14 @@ void UI_DisplayMenu(void)
 
 #ifdef ENABLE_CW_MODULATOR
 		case MENU_CW_FREQ:
-			sprintf(String, "%d Hz", 450 + gSubMenuSelection * 50);
+			sprintf(String, "Tone\n%d Hz", 450 + gSubMenuSelection * 50);
 			break;
 
 		case MENU_CW_SIDETONE_LEVEL:
 			if (gSubMenuSelection == 0)
-				strcpy(String, "OFF");
+				strcpy(String, "Tone vol\nOFF");
 			else
-				sprintf(String, "%u", gSubMenuSelection);
+				sprintf(String, "Tone vol\n%u", gSubMenuSelection);
 			break;
 
 		case MENU_CW_KEYER_MODE:
@@ -1379,7 +1379,7 @@ void UI_DisplayMenu(void)
 			break;
 
 		case MENU_CW_BKIN:
-			strcpy(String, gSubMenu_OFF_ON[gSubMenuSelection]);
+			sprintf(String, "Break-In\n%s", gSubMenu_OFF_ON[gSubMenuSelection]);
 			break;
 
 		case MENU_CW_MSG_REPEAT:
