@@ -531,9 +531,6 @@ void APP_StartListening(FUNCTION_Type_t function)
     // clear the other vfo's rssi level (to hide the antenna symbol)
     gVFO_RSSI_bar_level[!vfo] = 0;
 
-    AUDIO_AudioPathOn();
-    gEnableSpeaker = true;
-
     if (gSetting_backlight_on_tx_rx & BACKLIGHT_ON_TR_RX) {
         BACKLIGHT_TurnOn();
     }
@@ -585,6 +582,11 @@ void APP_StartListening(FUNCTION_Type_t function)
     if (gVoiceWriteIndex == 0)       // AM/FM RX mode will be set when the voice has finished
 #endif
         RADIO_SetModulation(gRxVfo->Modulation);  // no need, set it now
+
+    // Enable PA after BK4819 is in the correct AF mode, so any REG_47
+    // transient from RADIO_SetModulation has settled before the amp turns on.
+    AUDIO_AudioPathOn();
+    gEnableSpeaker = true;
 
     FUNCTION_Select(function);
 
