@@ -748,13 +748,13 @@ _NR7Y_CW_MACRO_SIG = 0x80     # Signature stored in high bit of length byte
 # CW key input mode display strings (menu index 0-7 stored directly in EEPROM bits 0-4)
 _NR7Y_CW_KEY_INPUT_MODES = [
     "PTT HandKey",           # 0: 0x08
-    "PTT+Tip HandKey",       # 1: 0x18
-    "PTT dah, Side1 dit",    # 2: 0x04
-    "PTT dit, Side1 dah",    # 3: 0x05
-    "PTT+Tip dah, Ring dit", # 4: 0x12
-    "PTT+Tip dit, Ring dah", # 5: 0x13
-    "Both dah, Both dit",    # 6: 0x16
-    "Both dit, Both dah",    # 7: 0x17
+    "Port HandKey",          # 1: 0x18
+    "Side Btn Iambic",       # 2: 0x04
+    "Side Btn Iambic Rev",   # 3: 0x05
+    "Port Iambic",           # 4: 0x12
+    "Port Iambic Reversed",  # 5: 0x13
+    "Port and Btn Iambic",       # 6: 0x16
+    "Port and Btn Iambic Rev",   # 7: 0x17
 ]
 
 # Extended key actions list for NR7Y firmware with CW modulator.
