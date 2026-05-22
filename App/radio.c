@@ -126,6 +126,15 @@ const char gModulationStr[MODULATION_UKNOWN][4] = {
         BK4819_WriteRegister(0x54, 0x9009);
         BK4819_WriteRegister(0x55, 0x31A9);
     }
+
+    static void AUDIO_ApplyCWProfile(void)
+    {
+        // AM SHARP values: narrow IF filter (REG54 bits[7:0]=9), low IF gain
+        BK4819_WriteRegister(0x2b, 0x0500);
+        //BK4819_WriteRegister(0x2f, 0x9990);
+        BK4819_WriteRegister(0x54, 0x9009);
+        BK4819_WriteRegister(0x55, 0x31A9);
+    }
 #endif
 
 bool RADIO_CheckValidList(uint8_t scanList)
@@ -847,6 +856,12 @@ void RADIO_SetupRegisters(bool switchToForeground)
 {
     BK4819_FilterBandwidth_t Bandwidth = gRxVfo->CHANNEL_BANDWIDTH;
 
+#ifdef ENABLE_EXTRA_FILTER
+    // BANDWIDTH_NARROWEST (2) != BK4819_FILTER_BW_NARROWEST (4); translate explicitly.
+    if (Bandwidth == (BK4819_FilterBandwidth_t)BANDWIDTH_NARROWEST)
+        Bandwidth = BK4819_FILTER_BW_NARROWEST;
+#endif
+
     #ifdef ENABLE_FEAT_F4HWN_NARROWER
         if(Bandwidth == BK4819_FILTER_BW_NARROW && gSetting_set_nfm == 1)
         {
@@ -1111,6 +1126,12 @@ void RADIO_SetTxParameters(void)
 {
 	BK4819_FilterBandwidth_t Bandwidth = gCurrentVfo->CHANNEL_BANDWIDTH;
 
+#ifdef ENABLE_EXTRA_FILTER
+    // BANDWIDTH_NARROWEST (2) != BK4819_FILTER_BW_NARROWEST (4); translate explicitly.
+    if (Bandwidth == (BK4819_FilterBandwidth_t)BANDWIDTH_NARROWEST)
+        Bandwidth = BK4819_FILTER_BW_NARROWEST;
+#endif
+
     #ifdef ENABLE_FEAT_F4HWN_NARROWER
         if(Bandwidth == BK4819_FILTER_BW_NARROW && gSetting_set_nfm == 1)
         {
@@ -1299,6 +1320,11 @@ void RADIO_SetModulation(ModulationMode_t modulation)
             BK4819_WriteRegister(0x2f, 0x9890);
 
             #ifdef ENABLE_FEAT_F4HWN_AUDIO
+                #ifdef ENABLE_CW_MODULATOR
+                if (modulation == MODULATION_CW)
+                    AUDIO_ApplyCWProfile();
+                else
+                #endif
                 if (modulation == MODULATION_USB)
                     AUDIO_ApplyUSBProfile();
                 else

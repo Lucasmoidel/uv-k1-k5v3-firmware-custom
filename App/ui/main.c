@@ -2043,6 +2043,18 @@ void UI_DisplayMain(void)
                 narrower = 1;
             }
 
+#ifdef ENABLE_EXTRA_FILTER
+            if (displayBandwidth == BANDWIDTH_NARROWEST)
+            {
+                // BANDWIDTH_NARROWEST is a distinct per-channel setting (not the F4HWN
+                // narrower mode upgrade); show its own label rather than "N+".
+                if (gSetting_set_gui)
+                    UI_PrintStringSmallNormal("2k", LCD_WIDTH + 80, 0, line + 1);
+                else
+                    GUI_DisplaySmallest("2k", 91, line == 0 ? 17 : 49, false, true);
+            }
+            else
+#endif
             if (gSetting_set_gui)
             {
                 const char *bandWidthNames[] = {"W", "N", "N+"};
