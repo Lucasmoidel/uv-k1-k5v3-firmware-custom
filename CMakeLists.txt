@@ -19,18 +19,33 @@ message("Build type: " ${CMAKE_BUILD_TYPE})
 
 enable_language(C ASM)
 
+find_package(Git QUIET)
+set(BUILD_COMMIT "unknown")
+if(GIT_FOUND AND EXISTS "${CMAKE_SOURCE_DIR}/.git")
+    execute_process(
+        COMMAND "${GIT_EXECUTABLE}" rev-parse --short HEAD
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        OUTPUT_VARIABLE BUILD_COMMIT
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET
+    )
+    if(NOT BUILD_COMMIT)
+        set(BUILD_COMMIT "unknown")
+    endif()
+endif()
+
 if(ENABLE_FEAT_F4HWN)
     if(NOT AUTHOR_STRING_1)
-        set(AUTHOR_STRING_1 "EGZUMER")
+        set(AUTHOR_STRING_1 "EGZUMER-F4HWN")
     endif()
     if(NOT AUTHOR_STRING_2)
-        set(AUTHOR_STRING_2 "F4HWN")
+        set(AUTHOR_STRING_2 "NR7Y")
     endif()
     if(NOT VERSION_STRING_1)
         set(VERSION_STRING_1 "v0.22")
     endif()
     if(NOT VERSION_STRING_2)
-        set(VERSION_STRING_2 "v4.2")
+        set(VERSION_STRING_2 "${BUILD_COMMIT}")
     endif()
     if(NOT EDITION_STRING)
         set(EDITION_STRING "Custom")

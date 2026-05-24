@@ -78,6 +78,7 @@ endif()
 target_compile_definitions(App INTERFACE 
     "AUTHOR_STRING=\"${AUTHOR_STRING}\""
     "VERSION_STRING=\"${VERSION_STRING}\""
+    "BUILD_COMMIT=\"${BUILD_COMMIT}\""
 )
 
 if(NOT SQL_TONE)
@@ -122,7 +123,7 @@ enable_feature(ENABLE_FMRADIO
     ui/fmradio.c
 )
 enable_feature(ENABLE_AIRCOPY
-    app/aircopy.c 
+    app/aircopy.c
     ui/aircopy.c
 )
 enable_feature(ENABLE_NOAA)
@@ -152,6 +153,7 @@ enable_feature(ENABLE_KEEP_MEM_NAME)
 enable_feature(ENABLE_WIDE_RX)
 enable_feature(ENABLE_TX_WHEN_AM)
 enable_feature(ENABLE_F_CAL_MENU)
+enable_feature(ENABLE_EXTRA_FILTER)
 enable_feature(ENABLE_CTCSS_TAIL_PHASE_SHIFT)
 enable_feature(ENABLE_BOOT_BEEPS)
 enable_feature(ENABLE_SHOW_CHARGE_LEVEL)
@@ -225,6 +227,8 @@ enable_feature(ENABLE_FEAT_F4HWN_RESUME_STATE)
 enable_feature(ENABLE_FEAT_F4HWN_NARROWER)
 enable_feature(ENABLE_FEAT_F4HWN_INV)
 enable_feature(ENABLE_FEAT_F4HWN_CTR)
+enable_feature(ENABLE_FEAT_F4HWN_SCAN_PROGRESS)
+enable_feature(ENABLE_FEAT_F4HWN_SCAN_FASTER)
 enable_feature(ENABLE_FEAT_F4HWN_RESCUE_OPS)
 enable_feature(ENABLE_FEAT_F4HWN_VOL)
 enable_feature(ENABLE_FEAT_F4HWN_AUDIO)
@@ -234,6 +238,15 @@ enable_feature(ENABLE_FEAT_F4HWN_GMRS_FRS_MURS)
 enable_feature(ENABLE_FEAT_F4HWN_CA)
 enable_feature(ENABLE_FEAT_F4HWN_DEBUG)
 enable_feature(ENABLE_FEAT_F4HWN_MEM)
+enable_feature(ENABLE_FEAT_F4HWN_BEAM
+    app/beam.c
+)
+
+if(ENABLE_FEAT_F4HWN_BEAM AND NOT ENABLE_AIRCOPY)
+    message(FATAL_ERROR "ENABLE_FEAT_F4HWN_BEAM requires ENABLE_AIRCOPY (it reuses g_FSK_Buffer, AIRCOPY_Obfuscate and the FSK packet plumbing).")
+endif()
+enable_feature(ENABLE_FEAT_F4HWN_QRCODE)
+enable_feature(ENABLE_FEAT_F4HWN_LOGO)
 
 # ---- DEBUGGING ----
 

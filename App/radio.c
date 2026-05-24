@@ -80,68 +80,58 @@ const char gModulationStr[MODULATION_UKNOWN][4] = {
     // Audio impression: fuller bass, more direct sound, while still keeping the 3 kHz top-end limit.
 
     static void AUDIO_ApplyFMProfile(uint8_t profile)
-    {
-        switch (profile)
-        {
-            default:
-            case 0: // FLAT
-                BK4819_WriteRegister(0x54, 0x9009);
-                BK4819_WriteRegister(0x55, 0x3200);
-                break;
+    {   //  | 0x54 || 0x55 |
+        static const uint16_t fm_profiles[][2] = {
+            {0x9009, 0x3200}, // 0: FLAT
+            {0x9009, 0x33A9}, // 1: CLEAN
+            {0x9009, 0x3600}, // 2: MID
+            {0x8546, 0x3AF0}, // 3: BOOST
+            {0x8566, 0x3D00}  // 4: MAX
+        };
 
-            case 1: // CLEAN
-                BK4819_WriteRegister(0x54, 0x9009);
-                BK4819_WriteRegister(0x55, 0x33A9);
-                break;
+        if (profile >= ARRAY_SIZE(fm_profiles))
+            profile = 0;
 
-            case 2: // MID
-                BK4819_WriteRegister(0x54, 0x9009);
-                BK4819_WriteRegister(0x55, 0x3600);
-                break;
-
-            case 3: // BOOST
-                BK4819_WriteRegister(0x54, 0x8546);
-                BK4819_WriteRegister(0x55, 0x3AF0);
-                break;
-
-            case 4: // MAX
-                BK4819_WriteRegister(0x54, 0x8566);
-                BK4819_WriteRegister(0x55, 0x3D00);
-                break;
-        }
+        BK4819_WriteRegister(0x54, fm_profiles[profile][0]);
+        BK4819_WriteRegister(0x55, fm_profiles[profile][1]);
     }
 
     static void AUDIO_ApplyAMProfile(uint8_t profile)
-    {
-        switch (profile)
-        {
-            default:
-            case 0: // SHARP (ALPHA test profile) - Narrow IF filter (REG54 bits[14:8]=0, bits[7:0]=9), low IF gain (REG55 bits[11:8]=1, ref=169)
-                    // Selective and crisp, best adjacent channel rejection, may sound harsh on strong signals
-                BK4819_WriteRegister(0x2b, 0x0300);
-                BK4819_WriteRegister(0x2f, 0x9990);
-                BK4819_WriteRegister(0x54, 0x9009);
-                BK4819_WriteRegister(0x55, 0x31A9);
-                break;
-            case 1: // STOCK - Narrow IF filter (REG54 bits[14:8]=0, bits[7:0]=9), moderate IF gain (REG55 bits[11:8]=4, ref=180)
-                    // Selective filter with balanced gain, punchy and detailed, good compromise between rejection and sensitivity
-                BK4819_WriteRegister(0x2b, 0x0500);
-                BK4819_WriteRegister(0x2f, 0x9990);
-                BK4819_WriteRegister(0x54, 0x9009);
-                BK4819_WriteRegister(0x55, 0x31A9);
-                break;
-            case 2: // OPEN (BRAVO test profile) - Medium-wide IF filter (REG54 bits[14:8]=8, bits[7:0]=70), high IF gain (REG55 bits[11:8]=8, ref=192)
-                    // Wide and pleasant, better sensitivity on weak signals, may struggle with adjacent channel interference
-                BK4819_WriteRegister(0x2b, 0x0300);
-                BK4819_WriteRegister(0x2f, 0x9990);
-                BK4819_WriteRegister(0x54, 0x8846);
-                BK4819_WriteRegister(0x55, 0x38C0);
-                break;
-        }
+    {   //  | 0x2b || 0x2f || 0x54 || 0x55 |
+        static const uint16_t am_profiles[][4] = {
+            // SHARP (ALPHA test profile) - Narrow IF filter (REG54 bits[14:8]=0, bits[7:0]=9), low IF gain (REG55 bits[11:8]=1, ref=169)
+            // Selective and crisp, best adjacent channel rejection, may sound harsh on strong signals
+            {0x0300, 0x9990, 0x9009, 0x31A9},
+
+            // STOCK - Narrow IF filter (REG54 bits[14:8]=0, bits[7:0]=9), moderate IF gain (REG55 bits[11:8]=4, ref=180)
+            // Selective filter with balanced gain, punchy and detailed, good compromise between rejection and sensitivity
+            {0x0500, 0x9990, 0x9009, 0x31A9},
+
+            // OPEN (BRAVO test profile) - Medium-wide IF filter (REG54 bits[14:8]=8, bits[7:0]=70), high IF gain (REG55 bits[11:8]=8, ref=192)
+            // Wide and pleasant, better sensitivity on weak signals, may struggle with adjacent channel interference
+            {0x0300, 0x9990, 0x8846, 0x38C0}
+        };
+
+        if (profile >= ARRAY_SIZE(am_profiles))
+            profile = 0;
+
+        BK4819_WriteRegister(0x2b, am_profiles[profile][0]);
+        BK4819_WriteRegister(0x2f, am_profiles[profile][1]);
+        BK4819_WriteRegister(0x54, am_profiles[profile][2]);
+        BK4819_WriteRegister(0x55, am_profiles[profile][3]);
     }
 
     static void AUDIO_ApplyUSBProfile(void)
     {
+        BK4819_WriteRegister(0x54, 0x9009);
+        BK4819_WriteRegister(0x55, 0x31A9);
+    }
+
+    static void AUDIO_ApplyCWProfile(void)
+    {
+        // AM SHARP values: narrow IF filter (REG54 bits[7:0]=9), low IF gain
+        BK4819_WriteRegister(0x2b, 0x0500);
+        //BK4819_WriteRegister(0x2f, 0x9990);
         BK4819_WriteRegister(0x54, 0x9009);
         BK4819_WriteRegister(0x55, 0x31A9);
     }
@@ -271,13 +261,9 @@ void RADIO_ValidateAndSetCode(FREQ_Config_t *pFreq_Config, uint8_t tmp) {
             break;
 
         case CODE_TYPE_CONTINUOUS_TONE:
-            if (tmp > (ARRAY_SIZE(CTCSS_Options) - 1))
-                tmp = 0;
-            break;
-
         case CODE_TYPE_DIGITAL:
         case CODE_TYPE_REVERSE_DIGITAL:
-            if (tmp > (ARRAY_SIZE(DCS_Options) - 1))
+            if (tmp > ((pFreq_Config->CodeType == CODE_TYPE_CONTINUOUS_TONE ? ARRAY_SIZE(CTCSS_Options) : ARRAY_SIZE(DCS_Options)) - 1))
                 tmp = 0;
             break;
     }
@@ -417,14 +403,22 @@ void RADIO_ConfigureChannel(const unsigned int VFO, const unsigned int configure
         {
             const uint8_t d4 = data[4];
             pVfo->FrequencyReverse  = !!((d4 >> 0) & 1u);
-			#ifdef ENABLE_EXTRA_FILTER
-				pVfo->CHANNEL_BANDWIDTH =   ((d4 >> 5) & 3u);
-			#else
-	            pVfo->CHANNEL_BANDWIDTH = !!((d4 >> 1) & 1u);
-			#endif
+            pVfo->CHANNEL_BANDWIDTH = !!((d4 >> 1) & 1u);  // WIDE=0, NARROW=1
             pVfo->OUTPUT_POWER      =   ((d4 >> 2) & 7u);
             pVfo->BUSY_CHANNEL_LOCK = !!((d4 >> 5) & 1u);
-            pVfo->TX_LOCK           = !!((d4 >> 6) & 1u);
+			#ifdef ENABLE_EXTRA_FILTER
+				// For CW/SSB, bit 6 encodes NARROWEST instead of TX_LOCK
+				// (TX_LOCK is inapplicable to those modes).
+				if ((pVfo->Modulation == MODULATION_CW || pVfo->Modulation == MODULATION_USB)
+				    && ((d4 >> 6) & 1u)) {
+					pVfo->CHANNEL_BANDWIDTH = BANDWIDTH_NARROWEST;
+					pVfo->TX_LOCK = false;
+				} else {
+					pVfo->TX_LOCK = !!((d4 >> 6) & 1u);
+				}
+			#else
+            	pVfo->TX_LOCK = !!((d4 >> 6) & 1u);
+			#endif
         }
 
         if (data[5] == 0xFF)
@@ -464,6 +458,14 @@ void RADIO_ConfigureChannel(const unsigned int VFO, const unsigned int configure
 
 				// No reverse-frequency mode in CW
 				pVfo->FrequencyReverse = false;
+			}
+			else if (pVfo->Modulation == MODULATION_USB)
+			{
+				// No scrambler in SSB
+				pVfo->SCRAMBLING_TYPE = 0;
+
+				// No PTT ID in SSB
+				pVfo->DTMF_PTT_ID_TX_MODE = PTT_ID_OFF;
 			}
 		#endif
 
@@ -685,30 +687,15 @@ void RADIO_ConfigureSquelchAndOutputPower(VFO_Info_t *pInfo)
     uint8_t Op = 0; // Low eeprom calibration data 
     uint8_t currentPower = pInfo->OUTPUT_POWER;
 
-    if(currentPower == OUTPUT_POWER_USER)
-    {
-        if(gSetting_set_pwr == 5)
-        {
-            Op = 1; // Mid eeprom calibration data
-        }
-        else if(gSetting_set_pwr == 6)
-        {
-            Op = 2; // High eeprom calibration data
-        }
+    if (currentPower == OUTPUT_POWER_USER)
         currentPower = gSetting_set_pwr;
-    }
     else
-    {
-        if (currentPower == OUTPUT_POWER_MID)
-        {
-            Op = 1; // Mid eeprom calibration data
-        }
-        else if(currentPower == OUTPUT_POWER_HIGH)
-        {
-            Op = 2; // High eeprom calibration data
-        }
         currentPower--;
-    }
+
+    if (currentPower == 5)
+        Op = 1; // Mid eeprom calibration data
+    else if (currentPower == 6)
+        Op = 2; // High eeprom calibration data
 
     PY25Q16_ReadBuffer(0x100D0 + (Band * 16) + (Op * 3), Txp, 3);
 
@@ -859,9 +846,21 @@ void RADIO_SelectVfos(void)
     RADIO_SelectCurrentVfo();
 }
 
+BK4819_FilterBandwidth_t RADIO_GetAMFilterBandwidth(const VFO_Info_t *pVfo)
+{
+    // On BK4829, AM "wide" intentionally reuses the wider RF filter preset.
+    return (pVfo->CHANNEL_BANDWIDTH == BANDWIDTH_WIDE) ? BK4819_FILTER_BW_WIDE : BK4819_FILTER_BW_AM;
+}
+
 void RADIO_SetupRegisters(bool switchToForeground)
 {
     BK4819_FilterBandwidth_t Bandwidth = gRxVfo->CHANNEL_BANDWIDTH;
+
+#ifdef ENABLE_EXTRA_FILTER
+    // BANDWIDTH_NARROWEST (2) != BK4819_FILTER_BW_NARROWEST (4); translate explicitly.
+    if (Bandwidth == (BK4819_FilterBandwidth_t)BANDWIDTH_NARROWEST)
+        Bandwidth = BK4819_FILTER_BW_NARROWEST;
+#endif
 
     #ifdef ENABLE_FEAT_F4HWN_NARROWER
         if(Bandwidth == BK4819_FILTER_BW_NARROW && gSetting_set_nfm == 1)
@@ -870,19 +869,26 @@ void RADIO_SetupRegisters(bool switchToForeground)
         }
     #endif
 
-    // Always mute the audio path during register setup, including CW/SSB.
-    // The previous CW skip prevented squelch from actually closing the audio
-    // when the user toggled monitor off. AUDIO_AudioPathOff controls the MCU-
-    // side PA enable GPIO; it does not cause the BK4819 register pop that was
-    // the concern behind the original skip (that pop came from REG_70, which
-    // is still handled separately in BK4819_SetupSquelch).
-    AUDIO_AudioPathOff();
-    gEnableSpeaker = false;
+#ifdef ENABLE_CW_MODULATOR
+    // For CW/SSB in monitor mode: keep the PA enabled to avoid the
+    // speaker-amp enable pop.
+    // For all other modes (or when speaker is already off): normal path.
+    const bool cw_ssb_monitor = gEnableSpeaker &&
+        (gRxVfo->Modulation == MODULATION_CW ||
+         gRxVfo->Modulation == MODULATION_USB);
+    if (cw_ssb_monitor) {
+        BK4819_SetAF(BK4819_AF_MUTE);
+    } else
+#endif
+    {
+        AUDIO_AudioPathOff();
+        gEnableSpeaker = false;
+    }
 
     BK4819_ToggleGpioOut(BK4819_GPIO6_PIN2_GREEN, false);
 
     if (gRxVfo->Modulation == MODULATION_AM)
-        BK4819_SetFilterBandwidth(BK4819_FILTER_BW_AM, true);
+        BK4819_SetFilterBandwidth(RADIO_GetAMFilterBandwidth(gRxVfo), true);
     else
     {
         switch (Bandwidth)
@@ -900,6 +906,11 @@ void RADIO_SetupRegisters(bool switchToForeground)
                     BK4819_SetFilterBandwidth(Bandwidth, false);
                 #endif
                 break;
+#ifdef ENABLE_EXTRA_FILTER
+            case BK4819_FILTER_BW_NARROWEST:
+                BK4819_SetFilterBandwidth(BK4819_FILTER_BW_NARROWEST, false);
+                break;
+#endif
         }
     }
 
@@ -955,12 +966,7 @@ void RADIO_SetupRegisters(bool switchToForeground)
 
     // AF RX Gain and DAC
     //BK4819_WriteRegister(BK4819_REG_48, 0xB3A8);  // 1011 00 111010 1000
-    BK4819_WriteRegister(BK4819_REG_48,
-        (11u << 12)                 |     // ??? .. 0 ~ 15, doesn't seem to make any difference
-        ( 0u << 10)                 |     // AF Rx Gain-1
-        (gEeprom.VOLUME_GAIN << 4) |     // AF Rx Gain-2
-        (gEeprom.DAC_GAIN    << 0));     // AF DAC Gain (after Gain-1 and Gain-2)
-
+    BK4819_SetRxAudioGain();
 
     uint16_t InterruptMask = BK4819_REG_3F_SQUELCH_FOUND | BK4819_REG_3F_SQUELCH_LOST;
 
@@ -1120,6 +1126,12 @@ void RADIO_SetTxParameters(void)
 {
 	BK4819_FilterBandwidth_t Bandwidth = gCurrentVfo->CHANNEL_BANDWIDTH;
 
+#ifdef ENABLE_EXTRA_FILTER
+    // BANDWIDTH_NARROWEST (2) != BK4819_FILTER_BW_NARROWEST (4); translate explicitly.
+    if (Bandwidth == (BK4819_FilterBandwidth_t)BANDWIDTH_NARROWEST)
+        Bandwidth = BK4819_FILTER_BW_NARROWEST;
+#endif
+
     #ifdef ENABLE_FEAT_F4HWN_NARROWER
         if(Bandwidth == BK4819_FILTER_BW_NARROW && gSetting_set_nfm == 1)
         {
@@ -1151,8 +1163,8 @@ void RADIO_SetTxParameters(void)
 			#endif
 			break;
 	#ifdef ENABLE_EXTRA_FILTER
-		case BK4819_FILTER_BW_1p7K:
-			BK4819_SetFilterBandwidth(BK4819_FILTER_BW_1p7K, false);
+		case BK4819_FILTER_BW_NARROWEST:
+			BK4819_SetFilterBandwidth(BK4819_FILTER_BW_NARROWEST, false);
 			break;
 	#endif
 	}	
@@ -1225,26 +1237,25 @@ void RADIO_SetTxParameters(void)
 void RADIO_SetModulation(ModulationMode_t modulation)
 {
     #ifdef ENABLE_BYP_RAW_DEMODULATORS
-    // BYP on BK4829 uses full audio bypass profile.
-    if (modulation == MODULATION_BYP) {
-        BK4819_EnterBypass();
+    if (modulation == MODULATION_BYP || modulation == MODULATION_RAW) {
+        uint16_t reg_3d_val = 0x0000;
+
+        if (modulation == MODULATION_BYP) {
+            // BYP on BK4829 uses full audio bypass profile.
+            BK4819_EnterBypass();
+            reg_3d_val = 0x2AAB;
+        } else {
+            // RAW on BK4829 uses RX-only filter bypass profile.
+            BK4819_EnterRaw();
+            // reg_3d_val = 0x0000;
+        }
+
         BK4819_SetRegValue(afDacGainRegSpec, 0xF);
-        BK4819_WriteRegister(BK4819_REG_3D, 0x2AAB);
+        BK4819_WriteRegister(BK4819_REG_3D, reg_3d_val);
         RADIO_SetupAGC(false, false);
         return;
     }
 
-    // RAW on BK4829 uses RX-only filter bypass profile.
-    if (modulation == MODULATION_RAW) {
-        BK4819_EnterRaw();
-        BK4819_SetRegValue(afDacGainRegSpec, 0xF);
-        BK4819_WriteRegister(BK4819_REG_3D, 0x0000);
-        RADIO_SetupAGC(false, false);
-        return;
-    }
-    #endif
-
-    #ifdef ENABLE_BYP_RAW_DEMODULATORS
     // Ensure we always leave bypass / raw mode before applying normal modulation settings.
     BK4819_ExitBypass();
     #endif
@@ -1293,7 +1304,7 @@ void RADIO_SetModulation(ModulationMode_t modulation)
                 BK4819_WriteRegister(0x55, 0x31a9);
             #endif
 
-            BK4819_SetFilterBandwidth(BK4819_FILTER_BW_AM, true);
+            BK4819_SetFilterBandwidth(RADIO_GetAMFilterBandwidth(gCurrentVfo), true);
             break;
         }
 
@@ -1309,6 +1320,11 @@ void RADIO_SetModulation(ModulationMode_t modulation)
             BK4819_WriteRegister(0x2f, 0x9890);
 
             #ifdef ENABLE_FEAT_F4HWN_AUDIO
+                #ifdef ENABLE_CW_MODULATOR
+                if (modulation == MODULATION_CW)
+                    AUDIO_ApplyCWProfile();
+                else
+                #endif
                 if (modulation == MODULATION_USB)
                     AUDIO_ApplyUSBProfile();
                 else
@@ -1536,16 +1552,16 @@ void RADIO_SendCssTail(void)
 void RADIO_SendEndOfTransmission(void)
 {
 #ifdef ENABLE_CW_MODULATOR
-	if (gTxVfo->Modulation != MODULATION_CW) {
+	if (gTxVfo->Modulation != MODULATION_CW && gTxVfo->Modulation != MODULATION_USB) {
+#else
+	if (gTxVfo->Modulation != MODULATION_USB) {
 #endif
     BK4819_PlayRoger();
     DTMF_SendEndOfTransmission();
 
     // send the CTCSS/DCS tail tone - allows the receivers to mute the usual FM squelch tail/crash
     RADIO_SendCssTail();
-#ifdef ENABLE_CW_MODULATOR
 	}
-#endif
     RADIO_SetupRegisters(false);
 }
 

@@ -30,6 +30,23 @@
 
 EEPROM_Config_t gEeprom = { 0 };
 
+// Load a DTMF code from EEPROM, falling back to default_val if invalid.
+static void SETTINGS_LoadEepromDtmf(uint32_t addr, char *dest, size_t size, const char *default_val)
+{
+    uint8_t buf[16];
+
+    if (size > sizeof(buf))
+        size = sizeof(buf);
+
+    PY25Q16_ReadBuffer(addr, buf, size);
+
+    if (DTMF_ValidateCodes((char *)buf, size)) {
+        memcpy(dest, buf, size);
+    } else {
+        strcpy(dest, default_val);
+    }
+}
+
 void SETTINGS_InitEEPROM(void)
 {
     uint8_t Data[16] = {0};
@@ -218,9 +235,12 @@ gEeprom.FreqChannel[1]   = IS_FREQ_CHANNEL(Data16[5]) ? Data16[5] : (FREQ_CHANNE
 
         gEeprom.FM_Band = fmCfg.band;
         //gEeprom.FM_Space = fmCfg.space;
+
+        uint16_t freqLoLimit = BK1080_GetFreqLoLimit(gEeprom.FM_Band);
+
         gEeprom.FM_SelectedFrequency = 
-            (fmCfg.selFreq >= BK1080_GetFreqLoLimit(gEeprom.FM_Band) && fmCfg.selFreq <= BK1080_GetFreqHiLimit(gEeprom.FM_Band)) ? 
-                fmCfg.selFreq : BK1080_GetFreqLoLimit(gEeprom.FM_Band);
+            (fmCfg.selFreq >= freqLoLimit && fmCfg.selFreq <= BK1080_GetFreqHiLimit(gEeprom.FM_Band)) ? 
+                fmCfg.selFreq : freqLoLimit;
             
         gEeprom.FM_SelectedChannel = fmCfg.selChn;
         gEeprom.FM_IsMrMode        = fmCfg.isMrMode;
@@ -294,51 +314,25 @@ gEeprom.FreqChannel[1]   = IS_FREQ_CHANNEL(Data16[5]) ? Data16[5] : (FREQ_CHANNE
     PY25Q16_ReadBuffer(0x00A0A8 + 0x48, Data, 8);
     gEeprom.DTMF_CODE_PERSIST_TIME  = (Data[0] < 101) ? Data[0] * 10 : 100;
     gEeprom.DTMF_CODE_INTERVAL_TIME = (Data[1] < 101) ? Data[1] * 10 : 100;
+
 #ifdef ENABLE_DTMF_CALLING
     gEeprom.PERMIT_REMOTE_KILL      = (Data[2] <   2) ? Data[2] : true;
 
     // 0EE0..0EE7
-
-    PY25Q16_ReadBuffer(0x00A0F8, Data, sizeof(gEeprom.ANI_DTMF_ID));
-    if (DTMF_ValidateCodes((char *)Data, sizeof(gEeprom.ANI_DTMF_ID))) {
-        memcpy(gEeprom.ANI_DTMF_ID, Data, sizeof(gEeprom.ANI_DTMF_ID));
-    } else {
-        strcpy(gEeprom.ANI_DTMF_ID, "123");
-    }
-
+    SETTINGS_LoadEepromDtmf(0x00A0F8, gEeprom.ANI_DTMF_ID, sizeof(gEeprom.ANI_DTMF_ID), "123");
 
     // 0EE8..0EEF
-    PY25Q16_ReadBuffer(0x00A0F8 + 0x8, Data, sizeof(gEeprom.KILL_CODE));
-    if (DTMF_ValidateCodes((char *)Data, sizeof(gEeprom.KILL_CODE))) {
-        memcpy(gEeprom.KILL_CODE, Data, sizeof(gEeprom.KILL_CODE));
-    } else {
-        strcpy(gEeprom.KILL_CODE, "ABCD9");
-    }
+    SETTINGS_LoadEepromDtmf(0x00A0F8 + 0x08, gEeprom.KILL_CODE, sizeof(gEeprom.KILL_CODE), "ABCD9");
 
     // 0EF0..0EF7
-    PY25Q16_ReadBuffer(0x00A0F8 + 0x10, Data, sizeof(gEeprom.REVIVE_CODE));
-    if (DTMF_ValidateCodes((char *)Data, sizeof(gEeprom.REVIVE_CODE))) {
-        memcpy(gEeprom.REVIVE_CODE, Data, sizeof(gEeprom.REVIVE_CODE));
-    } else {
-        strcpy(gEeprom.REVIVE_CODE, "9DCBA");
-    }
+    SETTINGS_LoadEepromDtmf(0x00A0F8 + 0x10, gEeprom.REVIVE_CODE, sizeof(gEeprom.REVIVE_CODE), "9DCBA");
 #endif
 
     // 0EF8..0F07
-    PY25Q16_ReadBuffer(0x00A0F8 + 0x18, Data, sizeof(gEeprom.DTMF_UP_CODE));
-    if (DTMF_ValidateCodes((char *)Data, sizeof(gEeprom.DTMF_UP_CODE))) {
-        memcpy(gEeprom.DTMF_UP_CODE, Data, sizeof(gEeprom.DTMF_UP_CODE));
-    } else {
-        strcpy(gEeprom.DTMF_UP_CODE, "12345");
-    }
+    SETTINGS_LoadEepromDtmf(0x00A0F8 + 0x18, gEeprom.DTMF_UP_CODE, sizeof(gEeprom.DTMF_UP_CODE), "12345");
 
     // 0F08..0F17
-    PY25Q16_ReadBuffer(0x00A0F8 + 0x28, Data, sizeof(gEeprom.DTMF_DOWN_CODE));
-    if (DTMF_ValidateCodes((char *)Data, sizeof(gEeprom.DTMF_DOWN_CODE))) {
-        memcpy(gEeprom.DTMF_DOWN_CODE, Data, sizeof(gEeprom.DTMF_DOWN_CODE));
-    } else {
-        strcpy(gEeprom.DTMF_DOWN_CODE, "54321");
-    }
+    SETTINGS_LoadEepromDtmf(0x00A0F8 + 0x28, gEeprom.DTMF_DOWN_CODE, sizeof(gEeprom.DTMF_DOWN_CODE), "54321");
 
     // 0F18..0F1F
     PY25Q16_ReadBuffer(0x00A130, Data, 8);
@@ -367,16 +361,12 @@ gEeprom.FreqChannel[1]   = IS_FREQ_CHANNEL(Data16[5]) ? Data16[5] : (FREQ_CHANNE
 	gEeprom.CW_TONE_FREQUENCY = Data[0] == 0xff ? 60 : 45 + (Data[0] & 0xf) * 5;  // Same as gMenuSelection: 50 Hz steps from 450, default 600
 	gEeprom.CW_SIDETONE_LEVEL = Data[0] == 0xff ? 4*21 : ((Data[0] >> 4) & 0x07) * 21;  // levels 0-6 scaled by 21 (max 6*21=126), default 4*21=105
 	gEeprom.CW_KEYER_MODE     = (Data[1] & 0x80) ? CW_IAMBIC_MODE_B : CW_IAMBIC_MODE_A;  // bit 7: 0=A, 1=B
-	gEeprom.CW_KEY_WPM        = ((Data[1] & 0x3f) < 31 && (Data[1] & 0x3f) >= 10) ? Data[1] & 0x3f : 18;  // bits 0-5, valid range 10-30, default 18 WPM
-	gEeprom.CW_KEY_INPUT_MENU      = (Data[2] < 0x80) ? (Data[2] & 0x0F) : 0;  // bits 5-0, range 0-9, default HANDKEY
+	gEeprom.CW_KEY_WPM        = ((Data[1] & 0x7f) <= 40 && (Data[1] & 0x7f) >= 10) ? Data[1] & 0x7f : 18;  // bits 0-6, valid range 10-40, default 18 WPM
+	gEeprom.CW_KEY_INPUT_MENU      = (Data[2] < 0x80) ? MIN((Data[2] & 0x0F), 7) : 0;  // bits 5-0, range 0-7, default HANDKEY
 	gEeprom.CW_KEY_INPUT 	  = CW_KEY_INPUT_menu_to_bitmap[gEeprom.CW_KEY_INPUT_MENU];
 	gEeprom.CW_BREAKIN_ENABLE	  = (Data[2] < 0x80) ? ((Data[2] >> 6) & 0x01) : 1;  // bit 6: 0=break-in off, 1=break-in on, default on
 	// Data[3]: high bit = invalid, bits 0-6 = repeat delay (seconds)
 	gEeprom.CW_MESSAGE_REPEAT_DELAY = (Data[3] < 0x80) ? (Data[3] & 0x7F) : 4;  // default 4s
-	uint16_t val10k = (Data[4] | (Data[5] << 8));
-	gEeprom.CW_ADC_CABLE_10K = (val10k & 0x8000) ? 379 : (val10k & 0xFFF);
-	uint16_t val20k = (Data[6] | (Data[7] << 8));
-	gEeprom.CW_ADC_CABLE_20K = (val20k & 0x8000) ? 190 : (val20k & 0xFFF);
 #endif
 
     // 0F40..0F47
@@ -478,8 +468,12 @@ gEeprom.FreqChannel[1]   = IS_FREQ_CHANNEL(Data16[5]) ? Data16[5] : (FREQ_CHANNE
         // 1FF0..0x1FF7
         // TODO: address TBD
         PY25Q16_ReadBuffer(0x00A158, Data, 8);
+        const uint8_t set_ptt_scn = Data[7] & 0x0F;
         gSetting_set_pwr = (((Data[7] & 0xF0) >> 4) < 7) ? ((Data[7] & 0xF0) >> 4) : 0;
-        gSetting_set_ptt = (((Data[7] & 0x0F)) < 2) ? ((Data[7] & 0x0F)) : 0;
+        gSetting_set_ptt = (set_ptt_scn < 4) ? (set_ptt_scn & 0x01) : 0;
+#ifdef ENABLE_FEAT_F4HWN_SCAN_FASTER
+        gSetting_set_scn = (set_ptt_scn < 4) ? ((set_ptt_scn & 0x02) == 0) : 1;
+#endif
 
         gSetting_set_tot = (((Data[6] & 0xF0) >> 4) < 4) ? ((Data[6] & 0xF0) >> 4) : 0;
         gSetting_set_eot = (((Data[6] & 0x0F)) < 4) ? ((Data[6] & 0x0F)) : 0;
@@ -518,10 +512,6 @@ gEeprom.FreqChannel[1]   = IS_FREQ_CHANNEL(Data16[5]) ? Data16[5] : (FREQ_CHANNE
 #ifdef ENABLE_FEAT_F4HWN_SLEEP
         gSetting_set_off = (Data[4] >> 1) > 120 ? 60 : (Data[4] >> 1); 
 #endif
-
-        // Warning
-        // Be aware, Data[3] is use by Spectrum
-        // Warning
 
         // And set special session settings for actions
         gSetting_set_ptt_session = gSetting_set_ptt;
@@ -605,6 +595,124 @@ uint32_t SETTINGS_FetchChannelFrequency(const uint16_t channel)
     PY25Q16_ReadBuffer(channel * 16, &info, sizeof(info));
 
     return info.frequency;
+}
+
+bool SETTINGS_FetchChannelScanInfo(const uint16_t channel, uint32_t *frequency, ModulationMode_t *modulation)
+{
+    struct
+    {
+        uint32_t frequency;
+        uint32_t offset;
+        uint8_t  settings[4];
+    } __attribute__((packed)) info;
+
+    PY25Q16_ReadBuffer(channel * 16, &info, sizeof(info));
+
+    if (frequency)
+        *frequency = info.frequency;
+
+    if (modulation)
+    {
+        uint8_t mode = info.settings[3] >> 4;
+        if (mode >= MODULATION_UKNOWN)
+            mode = MODULATION_FM;
+        *modulation = (ModulationMode_t)mode;
+    }
+
+    return info.frequency != 0 && info.frequency != 0xFFFFFFFF;
+}
+
+bool SETTINGS_FetchChannelScanDisplayInfo(const uint16_t channel, ChannelScanDisplayInfo_t *info)
+{
+    if (info == NULL)
+        return false;
+
+    struct
+    {
+        uint32_t frequency;
+        uint32_t offset;
+        uint8_t  data[8];
+    } __attribute__((packed)) raw;
+
+    PY25Q16_ReadBuffer(channel * 16, &raw, sizeof(raw));
+
+    if (raw.frequency == 0 || raw.frequency == 0xFFFFFFFF)
+        return false;
+
+    memset(info, 0, sizeof(*info));
+
+    info->rx.Frequency = raw.frequency;
+    info->tx.Frequency = raw.frequency;
+    info->offset       = (raw.offset >= _1GHz_in_KHz) ? (_1GHz_in_KHz / 100) : raw.offset;
+
+    info->rx.CodeType = (raw.data[2] >> 0) & 0x0F;
+    info->tx.CodeType = (raw.data[2] >> 4) & 0x0F;
+    RADIO_ValidateAndSetCode(&info->rx, raw.data[0]);
+    RADIO_ValidateAndSetCode(&info->tx, raw.data[1]);
+
+    uint8_t tmp = raw.data[3] & 0x0F;
+    if (tmp > TX_OFFSET_FREQUENCY_DIRECTION_SUB)
+        tmp = TX_OFFSET_FREQUENCY_DIRECTION_OFF;
+    info->txOffsetFrequencyDirection = tmp;
+
+    tmp = raw.data[3] >> 4;
+    if (tmp >= MODULATION_UKNOWN)
+        tmp = MODULATION_FM;
+    info->modulation = (ModulationMode_t)tmp;
+
+    tmp = raw.data[6];
+    if (tmp >= STEP_N_ELEM)
+        tmp = STEP_12_5kHz;
+    info->stepSetting   = (STEP_Setting_t)tmp;
+    info->stepFrequency = gStepFrequencyTable[tmp];
+
+    if (raw.data[4] == 0xFF)
+    {
+        info->frequencyReverse = false;
+        info->channelBandwidth = BANDWIDTH_WIDE;
+        info->outputPower      = OUTPUT_POWER_LOW1;
+        info->busyChannelLock  = false;
+        info->txLock           = true;
+    }
+    else
+    {
+        const uint8_t d4 = raw.data[4];
+        info->frequencyReverse = !!((d4 >> 0) & 1u);
+        info->channelBandwidth = !!((d4 >> 1) & 1u);
+        info->outputPower      =   ((d4 >> 2) & 7u);
+        info->busyChannelLock  = !!((d4 >> 5) & 1u);
+        info->txLock           = !!((d4 >> 6) & 1u);
+    }
+
+    switch (info->txOffsetFrequencyDirection)
+    {
+        case TX_OFFSET_FREQUENCY_DIRECTION_ADD:
+            info->tx.Frequency = raw.frequency + info->offset;
+            break;
+        case TX_OFFSET_FREQUENCY_DIRECTION_SUB:
+            info->tx.Frequency = raw.frequency - info->offset;
+            break;
+        default:
+            break;
+    }
+
+    if (raw.data[5] == 0xFF)
+    {
+#ifdef ENABLE_DTMF_CALLING
+        info->dtmfDecodingEnable = false;
+#endif
+        info->dtmfPttIdTxMode = PTT_ID_OFF;
+    }
+    else
+    {
+#ifdef ENABLE_DTMF_CALLING
+        info->dtmfDecodingEnable = (raw.data[5] >> 0) & 1u;
+#endif
+        const uint8_t pttId = (raw.data[5] >> 1) & 7u;
+        info->dtmfPttIdTxMode = pttId < ARRAY_SIZE(gSubMenu_PTT_ID) ? pttId : PTT_ID_OFF;
+    }
+
+    return true;
 }
 
 void SETTINGS_FetchChannelName(char *s, const uint16_t channel)
@@ -961,16 +1069,14 @@ void SETTINGS_SaveSettings(void)
     // Convert sidetone level back to 0-6 range for storage
     uint8_t level = gEeprom.CW_SIDETONE_LEVEL / 21;
 	State[0] = (gEeprom.CW_TONE_FREQUENCY - 45) / 5 | ((level & 0x07) << 4);
-	State[1] = (gEeprom.CW_KEYER_MODE << 7) | (gEeprom.CW_KEY_WPM & 0x3F);  // mode in bit 7 (0=A, 1=B), WPM in bits 0-5
+	State[1] = (gEeprom.CW_KEYER_MODE << 7) | (gEeprom.CW_KEY_WPM & 0x7F);  // mode in bit 7 (0=A, 1=B), WPM in bits 0-6
 	State[2] = (gEeprom.CW_KEY_INPUT_MENU & 0x1F) | ((gEeprom.CW_BREAKIN_ENABLE & 0x01) << 6);  // key input in bits 0-4, breakin bit 6
 	// State[3]: store menu value (delay/2) in bits 0-6, clear high bit to mark valid
 	State[3] = (gEeprom.CW_MESSAGE_REPEAT_DELAY) & 0x7F;
-	// State[4..5]: CW_ADC_CABLE_10K (12-bit value, clear high bit to mark valid)
-	State[4] = gEeprom.CW_ADC_CABLE_10K & 0xFF;
-	State[5] = (gEeprom.CW_ADC_CABLE_10K >> 8) & 0x7F;
-	// State[6..7]: CW_ADC_CABLE_20K (12-bit value, clear high bit to mark valid)
-	State[6] = gEeprom.CW_ADC_CABLE_20K & 0xFF;
-	State[7] = (gEeprom.CW_ADC_CABLE_20K >> 8) & 0x7F;
+	State[4] = 0xFF;  // unused (was CW_ADC_CABLE_10K low)
+	State[5] = 0xFF;  // unused (was CW_ADC_CABLE_10K high)
+	State[6] = 0xFF;  // unused (was CW_ADC_CABLE_20K low)
+	State[7] = 0xFF;  // unused (was CW_ADC_CABLE_20K high)
     PY25Q16_WriteBuffer(0x00A140, SecBuf, 0x08, false);
 #endif
     // ---------------------
@@ -1056,7 +1162,13 @@ void SETTINGS_SaveSettings(void)
 
     State[5] = ((tmp << 4) | (gSetting_set_ctr & 0x0F));
     State[6] = ((gSetting_set_tot << 4) | (gSetting_set_eot & 0x0F));
-    State[7] = ((gSetting_set_pwr << 4) | (gSetting_set_ptt & 0x0F));
+    uint8_t set_ptt_scn = gSetting_set_ptt & 0x01;
+#ifdef ENABLE_FEAT_F4HWN_SCAN_FASTER
+    if (!gSetting_set_scn)
+        set_ptt_scn |= 0x02;
+#endif
+
+    State[7] = ((gSetting_set_pwr << 4) | set_ptt_scn);
 
     gEeprom.KEY_LOCK_PTT = gSetting_set_lck;
 
@@ -1104,10 +1216,21 @@ void SETTINGS_SaveChannel(uint16_t Channel, uint8_t VFO, const VFO_Info_t *pVFO,
         State -> _8[2] = (pVFO->freq_config_TX.CodeType << 4) | pVFO->freq_config_RX.CodeType;
         State -> _8[3] = (pVFO->Modulation << 4) | pVFO->TX_OFFSET_FREQUENCY_DIRECTION;
         State -> _8[4] = 0
+#ifdef ENABLE_EXTRA_FILTER
+            // For CW/SSB, bit 6 encodes NARROWEST instead of TX_LOCK.
+            | (((pVFO->Modulation == MODULATION_CW || pVFO->Modulation == MODULATION_USB)
+                    ? (pVFO->CHANNEL_BANDWIDTH == BANDWIDTH_NARROWEST ? 1u : 0u)
+                    : (pVFO->TX_LOCK & 1u)) << 6)
+#else
             | (pVFO->TX_LOCK << 6)
+#endif
             | (pVFO->BUSY_CHANNEL_LOCK << 5)
             | (pVFO->OUTPUT_POWER      << 2)
+#ifdef ENABLE_EXTRA_FILTER
+            | ((pVFO->CHANNEL_BANDWIDTH == BANDWIDTH_NARROWEST ? BANDWIDTH_NARROW : pVFO->CHANNEL_BANDWIDTH) << 1)
+#else
             | (pVFO->CHANNEL_BANDWIDTH << 1)
+#endif
             | (pVFO->FrequencyReverse  << 0);
         State -> _8[5] = ((pVFO->DTMF_PTT_ID_TX_MODE & 7u) << 1)
 #ifdef ENABLE_DTMF_CALLING

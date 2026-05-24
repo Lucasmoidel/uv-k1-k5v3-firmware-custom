@@ -154,7 +154,7 @@ void FUNCTION_Transmit()
 
     // clear the DTMF RX live decoder buffer
     gDTMF_RX_live_timeout = 0;
-    memset(gDTMF_RX_live, 0, sizeof(gDTMF_RX_live));
+    DTMF_clear_input_box_memory();
 
 #if defined(ENABLE_FMRADIO)
     if (gFmRadioMode)
@@ -224,7 +224,9 @@ void FUNCTION_Transmit()
 #ifdef ENABLE_FEAT_F4HWN
     BK4819_DisableScramble();
 #else
-    if (gCurrentVfo->SCRAMBLING_TYPE > 0 && gSetting_ScrambleEnable)
+    if (gCurrentVfo->SCRAMBLING_TYPE > 0 && gSetting_ScrambleEnable
+        && gCurrentVfo->Modulation != MODULATION_USB
+        && gCurrentVfo->Modulation != MODULATION_CW)
         BK4819_EnableScramble(gCurrentVfo->SCRAMBLING_TYPE - 1);
     else
         BK4819_DisableScramble();

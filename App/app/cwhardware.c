@@ -38,7 +38,7 @@
 
 // Local debug toggle for CW hardware reads
 #ifndef ENABLE_CW_HARDWARE_DEBUG
-#define ENABLE_CW_HARDWARE_DEBUG 1
+#define ENABLE_CW_HARDWARE_DEBUG 0
 #endif
 
 #define ENABLE_CEC_KEYER_DEBUG 0
@@ -156,61 +156,6 @@ static void CW_ReadPtt(bool *ptt_out)
 //     // 12-bit data (0x400BA02C = CH3 DATA register)
 //     return (uint16_t)((*(volatile uint32_t *)0x400BA02CU) & 0xFFFU);
 // }
-#ifdef CW_STAGE2
-uint16_t CW_ReadCH3()
-{
-    // ADC/paddle support disabled in CW_STAGE2 minimal build
-    ADC_Start();
-    while (!ADC_CheckEndOfConversion(ADC_CH3)) {}
-    return ADC_GetValue(ADC_CH3);
-}
-#endif
-
-// ADC paddle detection disabled in CW_STAGE2 minimal build
-
-static void CW_ReadADCkeys(bool *tip_out, bool *ring_out)
-{
-#ifdef CW_STAGE2
-    // Take baseline ADC sample with timing
-    // uint16_t start_tick = timer_jiffies();
-    
-    // being absolutely paranoid about performance, we enable only CH3 for this loop, then set back
-    uint32_t regval = SARADC_CFG;
-    SARADC_CFG = (regval & ~SARADC_CFG_CH_SEL_MASK) | (ADC_CH3 << SARADC_CFG_CH_SEL_SHIFT);
-
-    uint16_t baseline = CW_ReadCH3();
-
-    // Validate with up to 4 more samples - stop if any differs by >40 from baseline
-    uint16_t val = baseline;
-    int samples_taken = 1;
-    
-    for (int i = 0; i < 12; i++) {
-        uint16_t sample = CW_ReadCH3();
-        samples_taken++;
-        
-        int16_t diff = (int16_t)sample - (int16_t)baseline;
-        if (diff < 0) diff = -diff;
-        
-        if (diff > CW_ADC_GLITCH_GUARDBAND) {
-            val = 0;  // Inconsistent reading detected
-            break;
-            SYSTICK_DelayUs(5);  // Short delay before next sample
-        }
-    }
-    SARADC_CFG = regval;  // Restore original channel config so battery monitoring etc. still works
-    
-    // uint16_t elapsed = timer_jiffies_since(start_tick);
-    // Log timing and validation
-    // char log_buf[64];
-    // sprintf(log_buf, "ADC: %u jiffies, %d samples, baseline=%u->%u\r\n", elapsed, samples_taken, baseline, val);
-    // UART_LogSend(log_buf, strlen(log_buf));
-
-    if (val < gEeprom.CW_ADC_CABLE_20K - CW_ADC_RANGE_LIMIT || val > CW_ADC_MAX) return;  // no paddle pressed or fault
-    else if (val < gEeprom.CW_ADC_CABLE_20K + CW_ADC_RANGE_LIMIT) *ring_out = true;  // 20k ohm
-    else if (val < gEeprom.CW_ADC_CABLE_10K + CW_ADC_RANGE_LIMIT) *tip_out  = true;  // 10k ohm
-    else *tip_out = *ring_out = true;
-#endif
-}
 
 // Read raw paddle inputs for a specific mode
 // Returns true if mode is valid, false otherwise
@@ -220,22 +165,6 @@ bool CW_ReadKeysForMode(uint8_t mode, bool *dit_out, bool *dah_out)
     if (mode & CW_KEY_FLAG_NO_KEYER && !(mode & CW_KEY_FLAG_PORT_GROUND)) {
         return false;
     }
-
-    if (mode & CW_KEY_FLAG_ADC) {
-        // ADC (CEC cable) input
-        bool adc_tip = false;
-        bool adc_ring = false;
-        CW_ReadADCkeys(&adc_tip, &adc_ring);
-
-        // Determine if keys are reversed
-        bool reverse = (mode & CW_KEY_FLAG_REVERSED);
-
-        // Map tip/ring to dit/dah based on reversed flag
-        *dit_out = reverse ? adc_tip : adc_ring;
-        *dah_out = reverse ? adc_ring : adc_tip;
-
-        return true;
-    } 
 
     // Read PTT (PC5) as tip - shared across button and port configs
     bool hw_tip = false;
@@ -247,11 +176,12 @@ bool CW_ReadKeysForMode(uint8_t mode, bool *dit_out, bool *dah_out)
         CW_ReadSideButton(&hw_ring);
     }
     
-    // Read port ring input if enabled and OR with button ring
-    if (mode & CW_KEY_FLAG_PORT_RING) {
+    // Read port ring input if enabled and OR with button ring.
+    // Short-circuit: if SD1 already resolved true, skip the expensive heavy deglitch —
+    // the OR result is the same and we avoid ~500us of sampling overhead on every poll.
+    if ((mode & CW_KEY_FLAG_PORT_RING) && !hw_ring) {
         // New hardware: port-ring is on PA13 (SWDIO when not used). Use deglitch helper on GPIOA bit 13.
-        bool port_ring = CW_ReadGpioDeglitched(GPIOA, LL_GPIO_PIN_13, true);
-        hw_ring = hw_ring || port_ring;  // OR both sources
+        hw_ring = CW_ReadGpioDeglitched(GPIOA, LL_GPIO_PIN_13, true);
     }
     
     // Determine if keys are reversed
@@ -349,34 +279,6 @@ void CW_ConfigurePortRing(bool enable)
 #endif
 }
 
-#ifdef CW_STAGE2
-void CW_ConfigureADCforCECPaddles(bool enable)
-{
-    //UART_Send("adc init...", strlen("adc init..."));
-    if (enable) {
-
-        // Enable ADC on PA8 (SARADC CH3) and configure input buffer/pulldown
-        PORTCON_PORTA_SEL1 = (PORTCON_PORTA_SEL1 & ~PORTCON_PORTA_SEL1_A8_MASK) | PORTCON_PORTA_SEL1_A8_BITS_SARADC_CH3;
-
-    	// Configure PTT (GPIOC pin 5) as output and drive low
-        GPIOC->DIR = (GPIOC->DIR & ~GPIO_DIR_5_MASK) | GPIO_DIR_5_BITS_OUTPUT;
-        GPIO_ClearBit(&GPIOC->DATA, GPIOC_PIN_PTT);
-    } else {
-        // return PA8 to UART
-        CW_ConfigurePortGround(false);
-
-        // return PTT to GPIO input
-        GPIOC->DIR &= ~GPIO_DIR_5_MASK; // INPUT
-        PORTCON_PORTC_IE |= PORTCON_PORTC_IE_C5_BITS_ENABLE; // Enable input buffer
-    }
-#if ENABLE_CEC_KEYER_DEBUG
-    char buf[50];
-    sprintf_(buf, "ADC for CEC %s\r\n", enable ? "Enabled" : "Disabled");
-    UART_Send(buf, strlen(buf));
-#endif
-}
-#endif
-
 // Reset sampled key states (used from keyer init)
 void CW_HW_ResetKeySamples(void)
 {
@@ -384,17 +286,4 @@ void CW_HW_ResetKeySamples(void)
     s_last_dah = false;
 }
 
-#ifndef CW_STAGE2
-// Minimal-build stubs for symbols referenced elsewhere when full keyer support
-// is disabled. These are intentionally trivial to keep linking happy.
 
-void CW_ConfigureADCforCECPaddles(bool enable)
-{
-    (void)enable;
-}
-
-uint16_t CW_ReadCH3()
-{
-    return 0;
-}
-#endif

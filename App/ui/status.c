@@ -60,7 +60,7 @@ void UI_DisplayStatus()
     char str[8] = "";
 
     gUpdateStatus = false;
-    memset(gStatusLine, 0, sizeof(gStatusLine));
+    UI_StatusClear();
 
     uint8_t     *line = gStatusLine;
     unsigned int x    = 0;
@@ -156,42 +156,47 @@ void UI_DisplayStatus()
 
         if(!SCANNER_IsScanning()) {
         #ifdef ENABLE_FEAT_F4HWN_RX_TX_TIMER
-            if(gCurrentFunction == FUNCTION_TRANSMIT && gSetting_set_tmr == true)
-            {
-                convertTime(line, 0);
-            }
-            else if(FUNCTION_IsRx() && gSetting_set_tmr == true)
-            {
-                convertTime(line, 1);
+            bool isTransmit = gCurrentFunction == FUNCTION_TRANSMIT;
+            if (gSetting_set_tmr && (isTransmit || FUNCTION_IsRx())) {
+                convertTime(line, !isTransmit);
             }
             else
         #endif
             {
                 if(!gAirCopyBootMode) {
+                    const void *src = NULL;    // Pointer to the font/bitmap to copy
+                    size_t sSize = 0;          // Size of the font/bitmap
+                    uint8_t sOff = 2;          // Offset relative to the reference position
+
                     #ifdef ENABLE_FEAT_F4HWN_RESCUE_OPS
-                    if(gEeprom.MENU_LOCK == true) {
-                        memcpy(line + x + 2, gFontRO, sizeof(gFontRO));
-                    }
-                    else
+                        if (gEeprom.MENU_LOCK) {
+                            src = gFontRO;
+                            sSize = sizeof(gFontRO);
+                        } else 
+                    #endif
                     {
-                    #endif
-                        uint8_t dw = (gEeprom.DUAL_WATCH != DUAL_WATCH_OFF) + (gEeprom.CROSS_BAND_RX_TX != CROSS_BAND_OFF) * 2;
-                        if(dw == 1 || dw == 3) { // DWR - dual watch + respond
-                            if(gDualWatchActive)
-                                memcpy(line + x + (dw==1?0:2), gFontDWR, sizeof(gFontDWR) - (dw==1?0:5));
-                            else
-                                memcpy(line + x + 3, gFontHold, sizeof(gFontHold));
+                        uint8_t xb = (gEeprom.CROSS_BAND_RX_TX != CROSS_BAND_OFF);
+
+                        if (gEeprom.DUAL_WATCH != DUAL_WATCH_OFF) {
+                            if (gDualWatchActive) { // DWR - dual watch + respond
+                                src = gFontDWR;
+                                sOff = xb ? 2 : 0;
+                                sSize = sizeof(gFontDWR) - (xb ? 5 : 0);
+                            } else {
+                                src = gFontHold;
+                                sOff = 3;
+                                sSize = sizeof(gFontHold);
+                            }
+                        } else {
+                            src   = xb ? gFontXB         : gFontMO;          // XB - crossband
+                            sSize = xb ? sizeof(gFontXB) : sizeof(gFontMO);  // MO - main only
                         }
-                        else if(dw == 2) { // XB - crossband
-                            memcpy(line + x + 2, gFontXB, sizeof(gFontXB));
-                        }
-                        else
-                        {
-                            memcpy(line + x + 2, gFontMO, sizeof(gFontMO));
-                        }
-                    #ifdef ENABLE_FEAT_F4HWN_RESCUE_OPS
                     }
-                    #endif
+
+                    // Perform the memcpy if a source was selected
+                    if (src) {
+                        memcpy(line + x + sOff, src, sSize);
+                    }
                 }
             }
         }
@@ -207,7 +212,7 @@ void UI_DisplayStatus()
     } else
     #endif
     #ifdef ENABLE_VOX
-    if (gEeprom.VOX_SWITCH) {
+    if (gEeprom.VOX_SWITCH && gRxVfo->Modulation != MODULATION_CW) {
         memcpy(line + x, gFontVox, sizeof(gFontVox));
         x1 = x + sizeof(gFontVox) + 1;
     }

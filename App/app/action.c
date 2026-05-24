@@ -40,9 +40,13 @@
 #include "misc.h"
 #include "settings.h"
 #include "ui/inputbox.h"
+#include "ui/main.h"
 #include "ui/ui.h"
 #ifdef ENABLE_REGA
     #include "app/rega.h"
+#endif
+#ifdef ENABLE_FEAT_F4HWN_BEAM
+    #include "app/beam.h"
 #endif
 
 #ifdef ENABLE_CW_MODULATOR
@@ -157,6 +161,9 @@ void (*action_opt_table[])(void) = {
     [ACTION_OPT_REGA_ALARM] = &ACTION_RegaAlarm,
     [ACTION_OPT_REGA_TEST] = &ACTION_RegaTest,
 #endif
+#ifdef ENABLE_FEAT_F4HWN_BEAM
+    [ACTION_OPT_BEAM] = &ACTION_Beam,
+#endif
 };
 
 static_assert(ARRAY_SIZE(action_opt_table) == ACTION_OPT_LEN);
@@ -246,7 +253,7 @@ void ACTION_Scan(bool bRestart)
     DTMF_clear_RX();
 #endif
     gDTMF_RX_live_timeout = 0;
-    memset(gDTMF_RX_live, 0, sizeof(gDTMF_RX_live));
+    DTMF_clear_input_box_memory();
 
     RADIO_SelectVfos();
 
@@ -271,15 +278,14 @@ void ACTION_Scan(bool bRestart)
 
         // channel mode. Keep scanning but toggle between scan lists
         RADIO_NextValidList(1);
+        UI_MAIN_NotifyScanProgressDataChanged();
 
         #ifdef ENABLE_FEAT_F4HWN_RESUME_STATE
             SETTINGS_WriteCurrentState();
         #endif
 
         // jump to the next channel
-        CHFRSCANNER_Start(false, gScanStateDir);
-        gScanPauseDelayIn_10ms = 1;
-        gScheduleScanListen    = false;
+        CHFRSCANNER_ManualResume(gScanStateDir);
     } else {
         #ifdef ENABLE_FEAT_F4HWN_RESUME_STATE
         if(gScanRangeStart == 0) // No ScanRange
@@ -338,11 +344,15 @@ void ACTION_SwitchDemodul(void)
 
 void ACTION_SwitchFilter(void)
 {
-	gRequestSaveChannel = 1;
-
 	gTxVfo->CHANNEL_BANDWIDTH++;
-    if(gTxVfo->CHANNEL_BANDWIDTH == BK4819_FILTER_BW_UNKNOWN)
-		gTxVfo->CHANNEL_BANDWIDTH = BK4819_FILTER_BW_WIDE;
+#ifdef ENABLE_EXTRA_FILTER
+	if (gTxVfo->CHANNEL_BANDWIDTH > BANDWIDTH_NARROWEST)
+#else
+	if (gTxVfo->CHANNEL_BANDWIDTH > BANDWIDTH_NARROW)
+#endif
+		gTxVfo->CHANNEL_BANDWIDTH = BANDWIDTH_WIDE;
+	gRequestSaveChannel  = 1;
+	gFlagReconfigureVfos = true;
 }
 
 
@@ -408,22 +418,14 @@ void ACTION_Handle(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
             break;
     }
 
-    if (!bKeyHeld && bKeyPressed) // button pushed
-    {
+    if (bKeyHeld != bKeyPressed) { // button pushed or released after hold 
+                                   // (!bKeyHeld && bKeyPressed) or (bKeyHeld && !bKeyPressed)
         return;
     }
 
-    // held or released beyond this point
+    // held or released after short press
 
-    if(!(bKeyHeld && !bKeyPressed)) // don't beep on released after hold
-        gBeepToPlay = BEEP_1KHZ_60MS_OPTIONAL;
-
-    if (bKeyHeld && !bKeyPressed) // button released after hold
-    {
-        return;
-    }
-
-    // held or released after short press beyond this point
+    gBeepToPlay = BEEP_1KHZ_60MS_OPTIONAL;
     
 #ifdef ENABLE_FMRADIO
     if (gFmRadioMode) { // do not run these actions in FM radio mode
@@ -447,6 +449,9 @@ void ACTION_Handle(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
             case ACTION_OPT_POWER_HIGH:
             case ACTION_OPT_REMOVE_OFFSET:
         #endif
+    #endif
+    #ifdef ENABLE_FEAT_F4HWN_BEAM
+            case ACTION_OPT_BEAM:
     #endif
                 gBeepToPlay = BEEP_500HZ_60MS_DOUBLE_BEEP_OPTIONAL;
                 return;
@@ -703,7 +708,7 @@ void ACTION_Wn(void)
 
     if (pVfo->Modulation == MODULATION_AM)
     {
-        BK4819_SetFilterBandwidth(BK4819_FILTER_BW_AM, true);
+        BK4819_SetFilterBandwidth(RADIO_GetAMFilterBandwidth(pVfo), true);
         return;
     }
 
@@ -766,26 +771,25 @@ void ACTION_Mute(void)
         BK1080_WriteRegister(BK1080_REG_05_SYSTEM_CONFIGURATION2, gMute ? 0x0A10 : 0x0A1F);
     #endif
     gEeprom.VOLUME_GAIN = gMute ? 0 : gEeprom.VOLUME_GAIN_BACKUP;
-    BK4819_WriteRegister(BK4819_REG_48,
-        (11u << 12)                |  // ??? .. 0 ~ 15, doesn't seem to make any difference
-        (0u << 10)                 |  // AF Rx Gain-1
-        (gEeprom.VOLUME_GAIN << 4) |  // AF Rx Gain-2
-        (gEeprom.DAC_GAIN << 0));     // AF DAC Gain (after Gain-1 and Gain-2)
+    BK4819_SetRxAudioGain();
 
     gUpdateStatus = true;
 }
 
 #ifdef ENABLE_FEAT_F4HWN_RESCUE_OPS
+void ACTION_ToggleVfoSetting(bool *setting) {
+    *setting = !(*setting);
+    gVfoConfigureMode = VFO_CONFIGURE_RELOAD;
+}
+
 void ACTION_Power_High(void)
 {
-    gPowerHigh = !gPowerHigh;
-    gVfoConfigureMode = VFO_CONFIGURE_RELOAD;
+    ACTION_ToggleVfoSetting(&gPowerHigh);
 }
 
 void ACTION_Remove_Offset(void)
 {
-    gRemoveOffset = !gRemoveOffset;
-    gVfoConfigureMode = VFO_CONFIGURE_RELOAD;
+    ACTION_ToggleVfoSetting(&gRemoveOffset);
 }
 #endif
 #endif

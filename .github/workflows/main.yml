@@ -1,8 +1,12 @@
-name: Build Firmware
+name: Build and Release CW Firmware
 
 on:
   push:
-    branches: [ main ]
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -10,15 +14,27 @@ jobs:
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
 
-    - name: Compile firmware
+    - name: Build CW firmware
       run: |
         chmod +x compile-with-docker.sh
-        ./compile-with-docker.sh
+        ./compile-with-docker.sh CW -DVERSION_STRING_2=${{ github.ref_name }}
 
-    - name: Upload firmware artifact
-      uses: actions/upload-artifact@v4
+    - name: Rename release artifacts
+      run: |
+        TAG=${{ github.ref_name }}
+        cp build/CW/nr7y.cw.bin nr7y.cw.${TAG}.bin
+        cp build/CW/nr7y.cw.uf2 nr7y.cw.${TAG}.uf2
+
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v2
       with:
-        name: firmware-artifact
-        path: compiled-firmware/f4hwn.packed.bin
+        name: NR7Y CW ${{ github.ref_name }}
+        files: |
+          nr7y.cw.${{ github.ref_name }}.bin
+          nr7y.cw.${{ github.ref_name }}.uf2
+          chirp/fusion.nr7y.chirp.v1.0.py
+          NR7Y CW Firmware - Paddle Rework.pdf

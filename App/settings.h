@@ -34,7 +34,10 @@ enum POWER_OnDisplayMode_t {
 #endif
     POWER_ON_DISPLAY_MODE_MESSAGE,
     POWER_ON_DISPLAY_MODE_VOLTAGE,
-    POWER_ON_DISPLAY_MODE_NONE
+#ifdef ENABLE_FEAT_F4HWN_LOGO
+    POWER_ON_DISPLAY_MODE_LOGO,
+#endif
+    POWER_ON_DISPLAY_MODE_NONE,
 };
 typedef enum POWER_OnDisplayMode_t POWER_OnDisplayMode_t;
 
@@ -46,7 +49,6 @@ typedef enum POWER_OnDisplayMode_t POWER_OnDisplayMode_t;
 #define CW_KEY_FLAG_SIDE1         0x04  // 0=not side1, 1=use side1 button (plus PTT)
 #define CW_KEY_FLAG_NO_KEYER      0x08  // 0=keyer enabled, 1=handkey only
 #define CW_KEY_FLAG_PORT_GROUND   0x10  // 0=no port ground, 1=use port ground
-#define CW_KEY_FLAG_ADC		  	  0x20  // 0=no ADC keyer, 1=use ADC (CEC cable) input
 
 // for reference, from ui/menu.c:
 	// "PTT\nHandKey",
@@ -56,12 +58,10 @@ typedef enum POWER_OnDisplayMode_t POWER_OnDisplayMode_t;
 	// "PTT+TIP\ndah\nRING\ndit",
 	// "PTT+TIP\ndit\nRING\ndah",
 	// "PTT+TIP\ndah\nSD1+RING\ndit",
-	// "PTT+TIP\ndit\nSD1+RING\ndah",
-	// "CEC\nCable",
-	// "CEC\nCable\nReversed"
+	// "PTT+TIP\ndit\nSD1+RING\ndah"
 
 // CW key input selection (0-9) mapped to bitmap value - used for menu and eeprom
-static const uint8_t CW_KEY_INPUT_menu_to_bitmap[10] = {
+static const uint8_t CW_KEY_INPUT_menu_to_bitmap[8] = {
 	0x08, // menu item 0: CW_KEY_FLAG_NO_KEYER - handkey only
 	0x18, // menu item 1: CW_KEY_FLAG_NO_KEYER | CW_KEY_FLAG_PORT_GROUND - handkey + port ground
 	0x04, // menu item 2: CW_KEY_FLAG_SIDE1 - buttons (PTT + SIDE1)
@@ -70,8 +70,6 @@ static const uint8_t CW_KEY_INPUT_menu_to_bitmap[10] = {
 	0x13, // menu item 5: CW_KEY_FLAG_PORT_RING | CW_KEY_FLAG_PORT_GROUND | CW_KEY_FLAG_REVERSED - port ring + port ground + reversed
 	0x16, // menu item 6: CW_KEY_FLAG_SIDE1 | CW_KEY_FLAG_PORT_RING | CW_KEY_FLAG_PORT_GROUND - buttons + port ring + port ground
 	0x17, // menu item 7: CW_KEY_FLAG_SIDE1 | CW_KEY_FLAG_PORT_RING | CW_KEY_FLAG_PORT_GROUND | CW_KEY_FLAG_REVERSED - buttons + port ring + port ground + reversed
-	0x20, // menu item 8: CW_KEY_FLAG_ADC - ADC (CEC cable) input -- this can't work with PTT
-	0x21  // menu item 9: CW_KEY_FLAG_ADC | CW_KEY_FLAG_REVERSED - ADC (CEC cable) input + reversed
 };
 
 #define CW_KEY_INPUT_HANDKEY 0x08 // shortcut for the default no-keyer mode (menu item 0)
@@ -183,6 +181,9 @@ enum ACTION_OPT_t {
 	ACTION_OPT_REPEAT_CWMSG2,
 	ACTION_OPT_REPEAT_CWMSG3,
 	ACTION_OPT_REPEAT_CWMSG4,
+#endif
+#ifdef ENABLE_FEAT_F4HWN_BEAM
+    ACTION_OPT_BEAM,
 #endif
     ACTION_OPT_LEN
 };
@@ -368,17 +369,36 @@ typedef struct {
 	uint16_t			  CW_KEY_INPUT_MENU;	// index of the chosen input method in the menu
 	bool     			  CW_BREAKIN_ENABLE;    // TX on key
 	uint8_t               CW_MESSAGE_REPEAT_DELAY;  // Repeat delay in seconds
-	uint16_t              CW_ADC_CABLE_10K;         // ADC threshold for 10k resistor (CEC cable detection)
-	uint16_t              CW_ADC_CABLE_20K;         // ADC threshold for 20k resistor (CEC cable detection)
 #endif
 
 } EEPROM_Config_t;
 
 extern EEPROM_Config_t gEeprom;
 
+typedef struct {
+    FREQ_Config_t    rx;
+    FREQ_Config_t    tx;
+    uint32_t         offset;
+    uint16_t         stepFrequency;
+    STEP_Setting_t   stepSetting;
+    ModulationMode_t modulation;
+    uint8_t          txOffsetFrequencyDirection;
+    uint8_t          outputPower;
+    bool             frequencyReverse;
+    uint8_t          channelBandwidth;
+    uint8_t          busyChannelLock;
+    uint8_t          txLock;
+#ifdef ENABLE_DTMF_CALLING
+    uint8_t          dtmfDecodingEnable;
+#endif
+    PTT_ID_t         dtmfPttIdTxMode;
+} ChannelScanDisplayInfo_t;
+
 void     SETTINGS_InitEEPROM(void);
 void     SETTINGS_LoadCalibration(void);
 uint32_t SETTINGS_FetchChannelFrequency(const uint16_t channel);
+bool     SETTINGS_FetchChannelScanInfo(const uint16_t channel, uint32_t *frequency, ModulationMode_t *modulation);
+bool     SETTINGS_FetchChannelScanDisplayInfo(const uint16_t channel, ChannelScanDisplayInfo_t *info);
 void     SETTINGS_FetchChannelName(char *s, const uint16_t channel);
 void     SETTINGS_FactoryReset(bool bIsAll);
 #ifdef ENABLE_FMRADIO

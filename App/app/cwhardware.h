@@ -41,13 +41,9 @@ bool CW_ReadKeysForMode(uint8_t mode, bool *dit_out, bool *dah_out);
 // Read normalized paddle inputs (computes edges)
 void CW_ReadKeys(CW_Input *in);
 
-// Read raw ADC value for CEC cable input
-uint16_t CW_ReadCH3(void);
-
 // Configure port pins for paddle interface
 void CW_ConfigurePortGround(bool enable);
 void CW_ConfigurePortRing(bool enable);
-void CW_ConfigureADCforCECPaddles(bool enable);
 
 // Reset hardware-sampled state (call from keyer init)
 void CW_HW_ResetKeySamples(void);
