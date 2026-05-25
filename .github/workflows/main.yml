@@ -1,9 +1,8 @@
 name: Build and Release CW Firmware
 
 on:
-  push:
-    tags:
-      - 'v[0-9]+.[0-9]+.[0-9]+'
+  release:
+    types: [published]
 
 permissions:
   contents: write
@@ -29,10 +28,9 @@ jobs:
         cp build/CW/nr7y.cw.bin nr7y.cw.${TAG}.bin
         cp build/CW/nr7y.cw.uf2 nr7y.cw.${TAG}.uf2
 
-    - name: Create GitHub Release
+    - name: Upload release artifacts
       uses: softprops/action-gh-release@v2
       with:
-        name: NR7Y CW ${{ github.ref_name }}
         files: |
           nr7y.cw.${{ github.ref_name }}.bin
           nr7y.cw.${{ github.ref_name }}.uf2
