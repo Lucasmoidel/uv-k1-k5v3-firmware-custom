@@ -19,6 +19,12 @@ shift || true  # remove preset from arguments if present
 # Any remaining args will be treated as CMake cache variables
 EXTRA_ARGS=("$@")
 
+# Allocate a pseudo-TTY only when stdout is an interactive terminal.
+# CI environments (GitHub Actions) have no TTY; passing -t there causes:
+#   "the input device is not a TTY"
+TTY_FLAGS=(-i)
+[[ -t 1 ]] && TTY_FLAGS+=(-t)
+
 # ---------------------------------------------
 # Validate preset name
 # ---------------------------------------------
@@ -53,7 +59,7 @@ build_preset() {
   # so VSCode can open files from error messages (rewrites /src/... -> $PWD/...).
   docker run --rm \
     -u $(id -u):$(id -g) \
-    -it -v "$PWD":"$PWD" -w "$PWD" "$IMAGE" \
+    "${TTY_FLAGS[@]}" -v "$PWD":"$PWD" -w "$PWD" "$IMAGE" \
     bash -c "which arm-none-eabi-gcc && arm-none-eabi-gcc --version && \
              cmake --preset ${preset} ${EXTRA_ARGS[@]+\"${EXTRA_ARGS[@]}\"} && \
              cmake --build --preset ${preset} -j"
