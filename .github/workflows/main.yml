@@ -1,8 +1,10 @@
 name: Build and Release CW Firmware
 
 on:
-  release:
-    types: [published]
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -31,6 +33,7 @@ jobs:
     - name: Upload release artifacts
       uses: softprops/action-gh-release@v2
       with:
+        token: ${{ secrets.GITHUB_TOKEN }}
         files: |
           nr7y.cw.${{ github.ref_name }}.bin
           nr7y.cw.${{ github.ref_name }}.uf2
