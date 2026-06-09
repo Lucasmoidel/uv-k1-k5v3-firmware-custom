@@ -416,7 +416,7 @@ int MENU_GetLimits(uint8_t menu_id, int32_t *pMin, int32_t *pMax)
 
 		case MENU_CW_KEY_INPUT:
 			*pMin = 0;
-			*pMax = 7;
+			*pMax = 9;
 			break;
 
 		case MENU_CW_MSG1:

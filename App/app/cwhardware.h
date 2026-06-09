@@ -44,6 +44,7 @@ void CW_ReadKeys(CW_Input *in);
 // Configure port pins for paddle interface
 void CW_ConfigurePortGround(bool enable);
 void CW_ConfigurePortRing(bool enable);
+void CW_ConfigureUsbPaddlePins(bool enable);
 
 // Reset hardware-sampled state (call from keyer init)
 void CW_HW_ResetKeySamples(void);

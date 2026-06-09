@@ -134,6 +134,7 @@ static void CW_KeyerDeinit()
     CW_KeyerResetRuntime();
 
     CW_ConfigurePortRing(false); // make sure PB15 is an input with no pullup, to avoid affecting the line if shorted to mic (keyer rework)
+    CW_ConfigureUsbPaddlePins(false); // restore PA11/PA12 to USB AF if USB paddle mode was active
 
     gCW_KeyerManagesPtt = false;
     gCW_KeyerUsingSD1 = false;
@@ -205,10 +206,12 @@ static void CW_KeyerInit()
 
     bool uses_port_ground = (key_input_mode & CW_KEY_FLAG_PORT_GROUND) != 0;
     bool uses_port_ring   = (key_input_mode & CW_KEY_FLAG_PORT_RING) != 0;
+    bool uses_usb_port    = (key_input_mode & CW_KEY_FLAG_USB_PORT) != 0;
 
     CW_ConfigurePortRing(uses_port_ring);
     if (uses_port_ground)
         CW_ConfigurePortGround(true);
+    CW_ConfigureUsbPaddlePins(uses_usb_port);
 
     gCW_KeyerUsingSD1 = (key_input_mode & CW_KEY_FLAG_SIDE1) != 0;
     s_last_key_input_mode = key_input_mode;
@@ -425,9 +428,10 @@ bool CW_CheckKeyerInputs(uint8_t new_mode)
     // Determine if we need to configure port pins for this mode (use bit flags)
     bool uses_port_ground = (new_mode & CW_KEY_FLAG_PORT_GROUND);
     bool uses_port_ring = (new_mode & CW_KEY_FLAG_PORT_RING);
+    bool uses_usb_port  = (new_mode & CW_KEY_FLAG_USB_PORT);
 
     // Button-only modes don't need validation (no port pins to check)
-    if (!uses_port_ground && !uses_port_ring) {
+    if (!uses_port_ground && !uses_port_ring && !uses_usb_port) {
         return true;
     }
     
@@ -448,6 +452,12 @@ bool CW_CheckKeyerInputs(uint8_t new_mode)
         UART_Send("Configuring port ring for CW keyer check\r\n", 42);
 #endif
         CW_ConfigurePortRing(uses_port_ring);
+    }
+    if (uses_usb_port) {
+#if CW_KEYER_DEBUG
+        UART_Send("Configuring USB paddle pins for CW keyer check\r\n", 49);
+#endif
+        CW_ConfigureUsbPaddlePins(true);
     }
 
     // Allow pins to stabilize after configuration

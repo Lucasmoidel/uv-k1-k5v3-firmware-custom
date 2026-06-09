@@ -34,14 +34,15 @@
 #include "driver/uart.h"
 #include "driver/adc.h"
 #include "driver/millis.h"
+#ifdef ENABLE_USB
+#include "driver/vcp.h"
+#endif
 #include "external/printf/printf.h"
 
 // Local debug toggle for CW hardware reads
 #ifndef ENABLE_CW_HARDWARE_DEBUG
 #define ENABLE_CW_HARDWARE_DEBUG 0
 #endif
-
-#define ENABLE_CEC_KEYER_DEBUG 0
 
 // Local state for last sampled paddles (edge detection)
 static bool     s_last_dit   = false;
@@ -114,7 +115,7 @@ static bool CW_ReadGpioDeglitched(GPIO_TypeDef *gpio_port, uint32_t pin_mask, bo
     uint16_t reg = 0, reg2;
     unsigned int i, k;
     uint32_t limit = heavy ? 500 : 100; // more samples for heavy de-noise
-    uint32_t goal = heavy ? 300 : 60;  // need this many stable samples
+    uint32_t goal = heavy ? 300 : 10;  // need this many stable samples
 
     for (i = 0, k = 0, reg = 0; i < goal && k < limit; i++, k++) {
         SYSTICK_DelayUs(1);
@@ -128,15 +129,17 @@ static bool CW_ReadGpioDeglitched(GPIO_TypeDef *gpio_port, uint32_t pin_mask, bo
         // Stable reading achieved - active low
         result = !reg;
     }
-
+#if ENABLE_CW_HARDWARE_DEBUG
+    char dbg_buf[80];
+        sprintf_(dbg_buf, "s=%u r=0x%08X m=%u r=%u\r\n", (unsigned)(i>=goal), (unsigned)reg, (unsigned)i, (unsigned)result);
+        UART_Send(dbg_buf, strlen(dbg_buf));
+#endif
     return result;
 }
 
 // Read the PTT/tip with de-noise
 static void CW_ReadPtt(bool *ptt_out)
 {
-    // TODO: add back the de-glitch routine
-    //*ptt_out = GPIO_IsPttPressed();
     *ptt_out = CW_ReadGpioDeglitched(GPIOB, LL_GPIO_PIN_10, false);
 
 }
@@ -168,7 +171,8 @@ bool CW_ReadKeysForMode(uint8_t mode, bool *dit_out, bool *dah_out)
 
     // Read PTT (PC5) as tip - shared across button and port configs
     bool hw_tip = false;
-    CW_ReadPtt(&hw_tip);
+    if((mode & CW_KEY_FLAG_USB_PORT) == 0)
+        CW_ReadPtt(&hw_tip);
     bool hw_ring = false;
 
     // Read button ring input if enabled
@@ -183,7 +187,16 @@ bool CW_ReadKeysForMode(uint8_t mode, bool *dit_out, bool *dah_out)
         // New hardware: port-ring is on PA13 (SWDIO when not used). Use deglitch helper on GPIOA bit 13.
         hw_ring = CW_ReadGpioDeglitched(GPIOA, LL_GPIO_PIN_13, true);
     }
-    
+
+    // USB port mode: PA11 acts as ring (DM), PA12 acts as tip (DP)
+    if (mode & CW_KEY_FLAG_USB_PORT) {
+        // Override hw_tip and hw_ring with USB paddle pins.
+        // PA11 = DM = ring, PA12 = DP = tip – matches the 3.5mm convention where
+        // sleeve/ring goes to DM and tip goes to DP when a TRS adapter is used.
+        hw_tip  = CW_ReadGpioDeglitched(GPIOA, LL_GPIO_PIN_12, false);
+        hw_ring = CW_ReadGpioDeglitched(GPIOA, LL_GPIO_PIN_11, false);
+    }
+
     // Determine if keys are reversed
     bool reverse = (mode & CW_KEY_FLAG_REVERSED);
 
@@ -253,6 +266,35 @@ void CW_ConfigurePortGround(bool enable)
     sprintf_(buf, "Port Ground %s\r\n", enable ? "Enabled" : "Disabled");
     UART_Send(buf, strlen(buf));
 #endif
+}
+
+// Configure USB port paddle pins (PA11 = DM, PA12 = DP).
+// When enabling: both become GPIO inputs with pull-ups (active-low paddle convention).
+// When disabling: restore to alternate-function mode for USB (AF10 on PY32F071).
+// Note: The USB CDC stack continues running in the background; only the pin mux changes.
+void CW_ConfigureUsbPaddlePins(bool enable)
+{
+    LL_IOP_GRP1_EnableClock(LL_IOP_GRP1_PERIPH_GPIOA);
+    if (enable) {
+        // Reconfigure PA11 and PA12 as floating inputs with internal pull-up.
+        // Doing both simultaneously via LL_GPIO_Init keeps the transition atomic.
+        LL_GPIO_InitTypeDef init = {0};
+        init.Pin        = LL_GPIO_PIN_11 | LL_GPIO_PIN_12;
+        init.Mode       = LL_GPIO_MODE_INPUT;
+        init.Pull       = LL_GPIO_PULL_UP;
+        init.Speed      = LL_GPIO_SPEED_FREQ_HIGH;
+        LL_GPIO_Init(GPIOA, &init);
+    } else {
+        // Restore PA11 and PA12 to USB alternate function.
+        // On PY32F071 the USB DM/DP function is AF10.
+        LL_GPIO_InitTypeDef init = {0};
+        init.Pin        = LL_GPIO_PIN_11 | LL_GPIO_PIN_12;
+        init.Mode       = LL_GPIO_MODE_ALTERNATE;
+        init.Alternate  = LL_GPIO_AF_10;
+        init.Pull       = LL_GPIO_PULL_NO;
+        init.Speed      = LL_GPIO_SPEED_FREQ_VERY_HIGH;
+        LL_GPIO_Init(GPIOA, &init);
+    }
 }
 
 // FM Radio is disabled on this firmware, we *always* configure

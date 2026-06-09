@@ -567,6 +567,8 @@ const char* gSubMenu_CW_KEY_INPUT[] =
 	"Port\nIambic\nReversed",
 	"Port+Btn\nIambic",
 	"Port+Btn\nIambic\nReversed",
+	"USB Port\nIambic",
+	"USB Port\nIambic\nReversed",
 };
 
 const char* gSubMenu_CW_MSG[] =

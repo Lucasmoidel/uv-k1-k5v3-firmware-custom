@@ -222,13 +222,15 @@
                 "ENABLE_MILLIS": true,
                 "ENABLE_SPECTRUM": true,
                 "ENABLE_VOX": true,
-                "ENABLE_FEAT_F4HWN_SCREENSHOT": true,
+                "ENABLE_FEAT_F4HWN_SCREENSHOT": false,
                 "ENABLE_FEAT_F4HWN_VOL": true,
                 "ENABLE_FEAT_F4HWN_AUDIO": true,
                 "ENABLE_SWD": false,
                 "ENABLE_TX_WHEN_AM": true,
                 "ENABLE_F_CAL_MENU": true,
-                "ENABLE_EXTRA_FILTER": true
+                "ENABLE_EXTRA_FILTER": true,
+
+                "ENABLE_USB": false 
             }
         }
     ],
