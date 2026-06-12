@@ -166,14 +166,14 @@ bool CW_ReadKeysForMode(uint8_t mode, bool *dit_out, bool *dah_out)
         return false;
     }
 
-    // Read PTT (PC5) as tip - shared across button and port configs
-    bool hw_tip = false;
-    CW_ReadPtt(&hw_tip);
+    // Read PTT (PC5) as ring/dah - shared across button and port configs
     bool hw_ring = false;
+    bool hw_tip = false;
+    CW_ReadPtt(&hw_ring);
 
     // Read button ring input if enabled
     if (mode & CW_KEY_FLAG_SIDE1) {
-        CW_ReadSideButton(&hw_ring);
+        CW_ReadSideButton(&hw_tip);
     }
     
     // Read port ring input if enabled and OR with button ring.
@@ -188,8 +188,8 @@ bool CW_ReadKeysForMode(uint8_t mode, bool *dit_out, bool *dah_out)
     bool reverse = (mode & CW_KEY_FLAG_REVERSED);
 
     // Map tip/ring to dit/dah based on reversed flag
-    *dit_out = reverse ? hw_tip : hw_ring;
-    *dah_out = reverse ? hw_ring : hw_tip;
+    *dit_out = reverse ? hw_ring : hw_tip;
+    *dah_out = reverse ? hw_tip : hw_ring;
 
     return true;
 }
