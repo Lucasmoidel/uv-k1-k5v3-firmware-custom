@@ -1604,8 +1604,7 @@ void RADIO_CW_Suspend(void)
 	// Set PA bias to 0
 	BK4819_SetupPowerAmplifier(0, 0);
 
-	// Set TONE1 to 0 Hz - this works better than gain 0 to disable sidetone
-	BK4819_SetScrambleFrequencyControlWord(0);
+	BK4819_StopTxTone();
 
 	// by doing this right after dropping tone, we don't hear a pop when going to RX
 	BK4819_SetAF(BK4819_AF_BASEBAND2);
