@@ -786,6 +786,13 @@ void BK4819_SetupSquelch(
     // <6:0>  0 TONE2/FSK tuning gain
     //        0 ~ 127
     //
+#ifdef ENABLE_CW_MODULATOR
+	if(gRxVfo->Modulation == MODULATION_CW)
+		// Setting REG_70 causes a pop in CW mode; write REG_71=0 instead
+		// to silence the tone generator without clicking the audio path.
+		BK4819_WriteRegister(BK4819_REG_71, 0);
+	else
+#endif
     BK4819_WriteRegister(BK4819_REG_70, 0);
 
     // Glitch threshold for Squelch = close
@@ -844,11 +851,22 @@ void BK4819_SetupSquelch(
 
 void BK4819_SetAF(BK4819_AF_Type_t AF)
 {
-    // AF Output Inverse Mode = Inverse
-    // Undocumented bits 0x2040
-    //
-    BK4819_WriteRegister(BK4819_REG_47, 0x6042 | (AF << 8));
-    // BK4819_WriteRegister(BK4819_REG_47, (6u << 12) | (AF << 8) | (1u << 6));
+	// AF Output Inverse Mode = Inverse
+	// Undocumented bits 0x2040
+	//
+#ifdef ENABLE_CW_MODULATOR
+	// Suppress redundant AF writes to prevent audio pop during CW key transitions.
+	// AF_ALAM (sidetone) is internally muted when tones are off, so switching from
+	// AF_ALAM to AF_MUTE (and back) is treated as a no-op here.
+	static BK4819_AF_Type_t lastAF = BK4819_AF_MUTE;
+	if(AF != lastAF && (AF != BK4819_AF_MUTE || lastAF != BK4819_AF_ALAM)) {
+		lastAF = AF;
+#endif
+	BK4819_WriteRegister(BK4819_REG_47, 0x6042 | (AF << 8));
+	// BK4819_WriteRegister(BK4819_REG_47, (6u << 12) | (AF << 8) | (1u << 6));
+#ifdef ENABLE_CW_MODULATOR
+	}
+#endif
 }
 
 void BK4819_SetRegValue(RegisterSpec s, uint16_t v) {
@@ -875,9 +893,19 @@ void BK4819_RX_TurnOn(void)
     //
     BK4819_WriteRegister(BK4819_REG_37, 0x9F1F);  // 0001111100001111
 
+#ifdef ENABLE_CW_MODULATOR
+	if(gRxVfo->Modulation == MODULATION_CW)
+		// For CW, skip REG_30=0 to avoid audio pop; keep AF DAC and VCO paths live
+		// during the RX→TX→RX transitions so the sidetone path stays warm.
+		BK4819_WriteRegister(BK4819_REG_30,
+			BK4819_REG_30_ENABLE_VCO_CALIB |
+			BK4819_REG_30_ENABLE_DISC_MODE |
+			BK4819_REG_30_ENABLE_PLL_VCO   |
+			BK4819_REG_30_ENABLE_AF_DAC);
+	else
+#endif
     // Turn off everything
     BK4819_WriteRegister(BK4819_REG_30, 0);
-
 
     BK4819_WriteRegister(BK4819_REG_30, 0xBFF1);
         // BK4819_REG_30_ENABLE_VCO_CALIB |
@@ -1256,6 +1284,9 @@ void BK4819_ExitBypass(void)
 
 void BK4819_PrepareTransmit(void)
 {
+#ifdef ENABLE_CW_MODULATOR
+	if(gTxVfo->Modulation != MODULATION_CW)
+#endif
     BK4819_ExitBypass();
     BK4819_ExitTxMute();
     BK4819_TxOn_Beep();
@@ -1266,8 +1297,23 @@ void BK4819_TxOn_Beep(void)
     BK4819_WriteRegister(BK4819_REG_36, 0);
     BK4819_WriteRegister(BK4819_REG_37, 0x9D1F);
     BK4819_WriteRegister(BK4819_REG_52, 0x028F);
-    BK4819_WriteRegister(BK4819_REG_30, 0x0000);
-    BK4819_WriteRegister(BK4819_REG_30, 0xC1FE);
+#ifdef ENABLE_CW_MODULATOR
+	if(gTxVfo->Modulation == MODULATION_CW) {
+		// Skip REG_30=0 reset to avoid audio pop during CW key-down.
+		// First write a safe transitional state keeping AF DAC and VCO alive,
+		// then switch to the full TX state (MIC ADC off since CW has no mic input).
+		BK4819_WriteRegister(BK4819_REG_30,
+			BK4819_REG_30_ENABLE_VCO_CALIB |
+			BK4819_REG_30_ENABLE_DISC_MODE |
+			BK4819_REG_30_ENABLE_PLL_VCO   |
+			BK4819_REG_30_ENABLE_AF_DAC);
+		BK4819_WriteRegister(BK4819_REG_30, (0xC1FE | BK4819_REG_30_ENABLE_AF_DAC | BK4819_REG_30_ENABLE_RX_DSP) & ~BK4819_REG_30_ENABLE_MIC_ADC);
+	} else
+#endif
+	{
+		BK4819_WriteRegister(BK4819_REG_30, 0x0000);
+		BK4819_WriteRegister(BK4819_REG_30, 0xC1FE);
+	}
 }
 
 void BK4819_ExitSubAu(void)
