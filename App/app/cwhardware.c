@@ -107,15 +107,15 @@ static void CW_ReadSideButton(bool *ring_out)
 }
 
 
-// Generic GPIO deglitch function - reads with de-noise
-// Returns true if pin is active (low), false if inactive (high)
+// Generic GPIO deglitch function - reads with de-noise using consecutive-sample algorithm.
+// Returns true if pin is active (low), false if inactive (high).
 static bool CW_ReadGpioDeglitched(GPIO_TypeDef *gpio_port, uint32_t pin_mask, bool heavy)
 {
     bool result = false;
     uint16_t reg = 0, reg2;
     unsigned int i, k;
     uint32_t limit = heavy ? 500 : 100; // more samples for heavy de-noise
-    uint32_t goal = heavy ? 300 : 10;  // need this many stable samples
+    uint32_t goal = heavy ? 300 : 60;  // need this many stable samples
 
     for (i = 0, k = 0, reg = 0; i < goal && k < limit; i++, k++) {
         SYSTICK_DelayUs(1);
@@ -137,28 +137,33 @@ static bool CW_ReadGpioDeglitched(GPIO_TypeDef *gpio_port, uint32_t pin_mask, bo
     return result;
 }
 
+// 64 samples at 48 MHz ≈ 3 µs total, negligible overhead.
+// Threshold 40/64 (62.5%) leaves headroom for up to 24 noise samples per burst.
+#define MV_SAMPLES   64U
+#define MV_THRESHOLD 40U   // ≥40 LOW samples (of 64) = pin is pressed
+
+static bool CW_ReadGpioMajority(GPIO_TypeDef *gpio_port, uint32_t pin_mask, uint32_t other_pin_mask)
+{
+    // while the target pin is being sampled, pull the other one low
+    LL_GPIO_SetPinPull(GPIOA, other_pin_mask, LL_GPIO_PULL_DOWN);
+    system_delay_us(1); // let the line settle after changing the pull state
+
+    uint32_t low_count = 0;
+    for (uint32_t k = 0; k < MV_SAMPLES; k++) {
+        if (!LL_GPIO_IsInputPinSet(gpio_port, pin_mask))
+            low_count++;
+    }
+
+    LL_GPIO_SetPinPull(GPIOA, other_pin_mask, LL_GPIO_PULL_UP);
+
+    return (low_count >= MV_THRESHOLD);
+}
+
 // Read the PTT/tip with de-noise
 static void CW_ReadPtt(bool *ptt_out)
 {
     *ptt_out = CW_ReadGpioDeglitched(GPIOB, LL_GPIO_PIN_10, false);
-
 }
-
-// static uint16_t ReadCH3()
-// {
-//     // OLD SINGLE SAMPLE CODE (keep for reference):
-//     // Trigger ADC conversion
-//     (*(volatile uint32_t *)0x400BA004U) = 0x1U;  // SARADC_START
-    
-//     // Wait for CH3 end of conversion (0x400BA028 = CH0 + 3*sizeof(ADC_Channel_t))
-//     while (!(*(volatile uint32_t *)0x400BA028U & 0x1)) {}
-    
-//     // Clear interrupt flag for CH3
-//     (*(volatile uint32_t *)0x400BA00CU) = (1U << 3);
-    
-//     // 12-bit data (0x400BA02C = CH3 DATA register)
-//     return (uint16_t)((*(volatile uint32_t *)0x400BA02CU) & 0xFFFU);
-// }
 
 // Read raw paddle inputs for a specific mode
 // Returns true if mode is valid, false otherwise
@@ -169,15 +174,18 @@ bool CW_ReadKeysForMode(uint8_t mode, bool *dit_out, bool *dah_out)
         return false;
     }
 
-    // Read PTT (PC5) as tip - shared across button and port configs
-    bool hw_tip = false;
-    if((mode & CW_KEY_FLAG_USB_PORT) == 0)
-        CW_ReadPtt(&hw_tip);
+    static int read_count = 0;
+
+    // Read PTT (PC5) as ring/dah - shared across button and port configs
     bool hw_ring = false;
+    bool hw_tip = false;
+    if((mode & CW_KEY_FLAG_USB_PORT) == 0) {
+        CW_ReadPtt(&hw_ring);
+    }
 
     // Read button ring input if enabled
     if (mode & CW_KEY_FLAG_SIDE1) {
-        CW_ReadSideButton(&hw_ring);
+        CW_ReadSideButton(&hw_tip);
     }
     
     // Read port ring input if enabled and OR with button ring.
@@ -185,24 +193,21 @@ bool CW_ReadKeysForMode(uint8_t mode, bool *dit_out, bool *dah_out)
     // the OR result is the same and we avoid ~500us of sampling overhead on every poll.
     if ((mode & CW_KEY_FLAG_PORT_RING) && !hw_ring) {
         // New hardware: port-ring is on PA13 (SWDIO when not used). Use deglitch helper on GPIOA bit 13.
-        hw_ring = CW_ReadGpioDeglitched(GPIOA, LL_GPIO_PIN_13, true);
+        hw_ring = CW_ReadGpioDeglitched(GPIOA, LL_GPIO_PIN_13, false);
     }
 
-    // USB port mode: PA11 acts as ring (DM), PA12 acts as tip (DP)
+    // USB port mode: PA11 acts as ring/dah (DM), PA12 acts as tip/dit (DP)
     if (mode & CW_KEY_FLAG_USB_PORT) {
-        // Override hw_tip and hw_ring with USB paddle pins.
-        // PA11 = DM = ring, PA12 = DP = tip – matches the 3.5mm convention where
-        // sleeve/ring goes to DM and tip goes to DP when a TRS adapter is used.
-        hw_tip  = CW_ReadGpioDeglitched(GPIOA, LL_GPIO_PIN_12, false);
-        hw_ring = CW_ReadGpioDeglitched(GPIOA, LL_GPIO_PIN_11, false);
+        hw_tip  = CW_ReadGpioMajority(GPIOA, LL_GPIO_PIN_12, LL_GPIO_PIN_11);
+        hw_ring = CW_ReadGpioMajority(GPIOA, LL_GPIO_PIN_11, LL_GPIO_PIN_12);
     }
 
     // Determine if keys are reversed
     bool reverse = (mode & CW_KEY_FLAG_REVERSED);
 
     // Map tip/ring to dit/dah based on reversed flag
-    *dit_out = reverse ? hw_tip : hw_ring;
-    *dah_out = reverse ? hw_ring : hw_tip;
+    *dit_out = reverse ? hw_ring : hw_tip;
+    *dah_out = reverse ? hw_tip : hw_ring;
 
     return true;
 }
@@ -276,14 +281,27 @@ void CW_ConfigureUsbPaddlePins(bool enable)
 {
     LL_IOP_GRP1_EnableClock(LL_IOP_GRP1_PERIPH_GPIOA);
     if (enable) {
-        // Reconfigure PA11 and PA12 as floating inputs with internal pull-up.
-        // Doing both simultaneously via LL_GPIO_Init keeps the transition atomic.
+        // Assert USB reset then gate the APB1 clock so the PHY stops driving PA11/PA12.
+        SET_BIT(USBD->CR, USBD_CR_Reset);
+        LL_APB1_GRP1_DisableClock(LL_APB1_GRP1_PERIPH_USBD);
+
+        // Disable the SYSCFG analog filter for PA11 and PA12 (PA_ENS bits).
+        SET_BIT(SYSCFG->PAENS, LL_GPIO_PIN_11 | LL_GPIO_PIN_12);
+
+        // Reconfigure PA12 as input with pull-up (tip/DP, active-low).
+        // PA11 is reconfigured as output to drive a scope/LED probe if needed.
         LL_GPIO_InitTypeDef init = {0};
-        init.Pin        = LL_GPIO_PIN_11 | LL_GPIO_PIN_12;
+        init.Pin        = LL_GPIO_PIN_12 | LL_GPIO_PIN_11;
         init.Mode       = LL_GPIO_MODE_INPUT;
         init.Pull       = LL_GPIO_PULL_UP;
-        init.Speed      = LL_GPIO_SPEED_FREQ_HIGH;
+        init.Speed      = LL_GPIO_SPEED_FREQ_VERY_HIGH;
         LL_GPIO_Init(GPIOA, &init);
+
+        // init.Pin        = LL_GPIO_PIN_11;
+        // init.Mode       = LL_GPIO_MODE_OUTPUT;
+        // init.Pull       = LL_GPIO_PULL_NO;
+        // init.Speed      = LL_GPIO_SPEED_FREQ_VERY_HIGH;
+        // LL_GPIO_Init(GPIOA, &init);
     } else {
         // Restore PA11 and PA12 to USB alternate function.
         // On PY32F071 the USB DM/DP function is AF10.
