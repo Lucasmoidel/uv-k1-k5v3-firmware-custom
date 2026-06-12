@@ -53,15 +53,15 @@ typedef enum POWER_OnDisplayMode_t POWER_OnDisplayMode_t;
 
 // for reference, from ui/menu.c:
 	// "PTT\nHandKey",
-	// "PTT+TIP\nHandKey",
-	// "PTT dah\nSD1 dit",
-	// "PTT dit\nSD1 dah",
-	// "PTT+TIP\ndah\nRING\ndit",
-	// "PTT+TIP\ndit\nRING\ndah",
-	// "PTT+TIP\ndah\nSD1+RING\ndit",
-	// "PTT+TIP\ndit\nSD1+RING\ndah",
+	// "Port\nHandKey",
+	// "Side Btn\nIambic",
+	// "Side Btn\nIambic\nReversed",
+	// "Port\nIambic",
+	// "Port\nIambic\nReversed",
+	// "Port+Btn\nIambic",
+	// "Port+Btn\nIambic\nReversed",
 	// "USB Port\nIambic",
-	// "USB Port\nIambic\nReversed"
+	// "USB Port\nIambic\nReversed",
 
 // CW key input selection (0-9) mapped to bitmap value - used for menu and eeprom
 static const uint8_t CW_KEY_INPUT_menu_to_bitmap[10] = {

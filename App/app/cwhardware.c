@@ -146,7 +146,7 @@ static bool CW_ReadGpioMajority(GPIO_TypeDef *gpio_port, uint32_t pin_mask, uint
 {
     // while the target pin is being sampled, pull the other one low
     LL_GPIO_SetPinPull(GPIOA, other_pin_mask, LL_GPIO_PULL_DOWN);
-    system_delay_us(1); // let the line settle after changing the pull state
+    SYSTICK_DelayUs(2); // let the line settle after changing the pull state
 
     uint32_t low_count = 0;
     for (uint32_t k = 0; k < MV_SAMPLES; k++) {
@@ -173,8 +173,6 @@ bool CW_ReadKeysForMode(uint8_t mode, bool *dit_out, bool *dah_out)
     if (mode & CW_KEY_FLAG_NO_KEYER && !(mode & CW_KEY_FLAG_PORT_GROUND)) {
         return false;
     }
-
-    static int read_count = 0;
 
     // Read PTT (PC5) as ring/dah - shared across button and port configs
     bool hw_ring = false;
