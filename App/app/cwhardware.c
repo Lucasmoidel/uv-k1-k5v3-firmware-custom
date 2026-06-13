@@ -166,10 +166,10 @@ bool CW_ReadKeysForMode(uint8_t mode, bool *dit_out, bool *dah_out)
         return false;
     }
 
-    // Read PTT (PC5) as tip - shared across button and port configs
+    // Read PTT (PC5) as tip - this is how the rework wires it
+    bool hw_ring = false;
     bool hw_tip = false;
     CW_ReadPtt(&hw_tip);
-    bool hw_ring = false;
 
     // Read button ring input if enabled
     if (mode & CW_KEY_FLAG_SIDE1) {
@@ -188,8 +188,8 @@ bool CW_ReadKeysForMode(uint8_t mode, bool *dit_out, bool *dah_out)
     bool reverse = (mode & CW_KEY_FLAG_REVERSED);
 
     // Map tip/ring to dit/dah based on reversed flag
-    *dit_out = reverse ? hw_tip : hw_ring;
-    *dah_out = reverse ? hw_ring : hw_tip;
+    *dit_out = reverse ? hw_ring : hw_tip;
+    *dah_out = reverse ? hw_tip : hw_ring;
 
     return true;
 }
@@ -270,7 +270,8 @@ void CW_ConfigurePortRing(bool enable)
         LL_GPIO_SetPinMode(GPIOA, LL_GPIO_PIN_13, LL_GPIO_MODE_INPUT);
         LL_GPIO_SetPinPull(GPIOA, LL_GPIO_PIN_13, LL_GPIO_PULL_UP);
     } else {
-        // Intentionally do nothing — leave PA13 as SWDIO/default
+        // leave PA13 as SWDIO/default, but no pullup so it doesn't mess with the mic
+        LL_GPIO_SetPinPull(GPIOA, LL_GPIO_PIN_13, LL_GPIO_PULL_NO);
     }
 #if ENABLE_KEYER_DEBUG
     char buf[50];

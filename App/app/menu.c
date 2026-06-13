@@ -32,7 +32,7 @@
 #include "board.h"
 #include "driver/backlight.h"
 #include "driver/bk4819.h"
-#include "driver/eeprom.h"
+#include "driver/py25q16.h"
 #include "driver/gpio.h"
 #include "driver/keyboard.h"
 #include "frequencies.h"
@@ -75,9 +75,9 @@ bool gCwNoKeyerError = false;
             // radio 1 .. 04 00 46 00 50 00 2C 0E
             // radio 2 .. 05 00 46 00 50 00 2C 0E
             //
-            EEPROM_ReadBuffer(0x1F88, &misc, 8);
+            PY25Q16_ReadBuffer(0x010000 + 0x188, &misc, 8);
             misc.BK4819_XtalFreqLow = value;
-            EEPROM_WriteBuffer(0x1F88, &misc);
+            PY25Q16_WriteBuffer(0x010000 + 0x188, &misc, 8, false);
         }
     }
 #endif

@@ -116,6 +116,7 @@ void     BK4819_PlaySingleTone(const unsigned int tone_Hz, const unsigned int de
 void     BK4819_EnterTxMute(void);
 void     BK4819_ExitTxMute(void);
 void     BK4819_Sleep(void);
+void     BK4819_StopTxTone(void);
 void     BK4819_TurnsOffTones_TurnsOnRX(void);
 #ifdef ENABLE_AIRCOPY
     void     BK4819_SetupAircopy(void);

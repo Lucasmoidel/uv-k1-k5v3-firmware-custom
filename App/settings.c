@@ -65,8 +65,12 @@ void SETTINGS_InitEEPROM(void)
             // Different version: new install or firmware update
 
             // 1. Write new version to EEPROM
+            // Use sizeof(newVersion) - 1 to always leave room for null terminator.
+            // VERSION_STRING_2 > 15 chars can corrupt the flash sector (the write
+            // programs the full 4K sector and an unterminated string leaves garbage
+            // in adjacent bytes that aliases onto other settings on re-read).
             char newVersion[16] = {0};
-            strncpy(newVersion, VERSION_STRING_2, sizeof(newVersion));
+            strncpy(newVersion, VERSION_STRING_2, sizeof(newVersion) - 1);
             PY25Q16_WriteBuffer(0x00A160, newVersion, sizeof(newVersion), false);
 
             // 2. Reset sensitive parameters (MENU_LOCK, etc.)
@@ -1218,7 +1222,11 @@ void SETTINGS_SaveChannel(uint16_t Channel, uint8_t VFO, const VFO_Info_t *pVFO,
         State -> _8[4] = 0
 #ifdef ENABLE_EXTRA_FILTER
             // For CW/SSB, bit 6 encodes NARROWEST instead of TX_LOCK.
-            | (((pVFO->Modulation == MODULATION_CW || pVFO->Modulation == MODULATION_USB)
+            | ((((
+#ifdef ENABLE_CW_MODULATOR
+                pVFO->Modulation == MODULATION_CW ||
+#endif
+                pVFO->Modulation == MODULATION_USB))
                     ? (pVFO->CHANNEL_BANDWIDTH == BANDWIDTH_NARROWEST ? 1u : 0u)
                     : (pVFO->TX_LOCK & 1u)) << 6)
 #else
