@@ -76,9 +76,6 @@ void CW_EndTxNow(void)
 // ---------------------------------------------------------------------------
 void CW_AppUpdate(void)
 {
-	if (gF_LOCK)  // don't init or run the keyer in "hidden menu" tech mode
-		return;
-
 	if (!(gTxVfo->Modulation == MODULATION_CW
 #ifdef ENABLE_CODE_PRACTICE
 		|| gCW_CpoActive
