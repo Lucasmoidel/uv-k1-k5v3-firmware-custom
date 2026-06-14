@@ -144,18 +144,23 @@ static bool CW_ReadGpioDeglitched(GPIO_TypeDef *gpio_port, uint32_t pin_mask, bo
 
 static bool CW_ReadGpioMajority(GPIO_TypeDef *gpio_port, uint32_t pin_mask, uint32_t other_pin_mask)
 {
-    // while the target pin is being sampled, pull the other one low
+    // opposing pin as output low
     LL_GPIO_SetPinPull(GPIOA, other_pin_mask, LL_GPIO_PULL_DOWN);
-    SYSTICK_DelayUs(2); // let the line settle after changing the pull state
+    LL_GPIO_SetPinMode(GPIOA, other_pin_mask, LL_GPIO_MODE_OUTPUT);
+    LL_GPIO_ResetOutputPin(GPIOA, other_pin_mask);
+
+    // sample target pin as pu high input 
+    LL_GPIO_SetPinMode(GPIOA, pin_mask, LL_GPIO_MODE_INPUT);
+    LL_GPIO_SetPinPull(GPIOA, pin_mask, LL_GPIO_PULL_UP);
+
+    SYSTICK_DelayUs(5); // let the line settle after changing state
 
     uint32_t low_count = 0;
     for (uint32_t k = 0; k < MV_SAMPLES; k++) {
         if (!LL_GPIO_IsInputPinSet(gpio_port, pin_mask))
             low_count++;
     }
-
-    LL_GPIO_SetPinPull(GPIOA, other_pin_mask, LL_GPIO_PULL_UP);
-
+    
     return (low_count >= MV_THRESHOLD);
 }
 
@@ -284,20 +289,14 @@ void CW_ConfigureUsbPaddlePins(bool enable)
         // Disable the SYSCFG analog filter for PA11 and PA12 (PA_ENS bits).
         SET_BIT(SYSCFG->PAENS, LL_GPIO_PIN_11 | LL_GPIO_PIN_12);
 
-        // Reconfigure PA12 as input with pull-up (tip/DP, active-low).
-        // PA11 is reconfigured as output to drive a scope/LED probe if needed.
+        // Set the paddle pins as output low to start off - we'll change to input for sampling
         LL_GPIO_InitTypeDef init = {0};
         init.Pin        = LL_GPIO_PIN_12 | LL_GPIO_PIN_11;
-        init.Mode       = LL_GPIO_MODE_INPUT;
-        init.Pull       = LL_GPIO_PULL_UP;
+        init.Mode       = LL_GPIO_MODE_OUTPUT;
+        init.Pull       = LL_GPIO_PULL_NO;
         init.Speed      = LL_GPIO_SPEED_FREQ_VERY_HIGH;
         LL_GPIO_Init(GPIOA, &init);
 
-        // init.Pin        = LL_GPIO_PIN_11;
-        // init.Mode       = LL_GPIO_MODE_OUTPUT;
-        // init.Pull       = LL_GPIO_PULL_NO;
-        // init.Speed      = LL_GPIO_SPEED_FREQ_VERY_HIGH;
-        // LL_GPIO_Init(GPIOA, &init);
     } else {
         // Restore PA11 and PA12 to USB alternate function.
         // On PY32F071 the USB DM/DP function is AF10.
@@ -308,6 +307,12 @@ void CW_ConfigureUsbPaddlePins(bool enable)
         init.Pull       = LL_GPIO_PULL_NO;
         init.Speed      = LL_GPIO_SPEED_FREQ_VERY_HIGH;
         LL_GPIO_Init(GPIOA, &init);
+
+        // Clear USB reset and re-enable the APB1 clock to restore USB functionality.
+        // Thse *should* be safe to do again if they were already correct
+        CLEAR_BIT(USBD->CR, USBD_CR_Reset);
+        LL_APB1_GRP1_EnableClock(LL_APB1_GRP1_PERIPH_USBD);
+
     }
 }
 
