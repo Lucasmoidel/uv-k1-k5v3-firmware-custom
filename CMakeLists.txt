@@ -47,6 +47,13 @@ if(ENABLE_FEAT_F4HWN)
     if(NOT VERSION_STRING_2)
         set(VERSION_STRING_2 "${BUILD_COMMIT}")
     endif()
+    # VERSION_STRING_2 is stored in a 16-byte EEPROM field. Truncate to 15 chars
+    # (leaving room for the null terminator) to prevent flash sector corruption.
+    string(LENGTH "${VERSION_STRING_2}" _ver2_len)
+    if(_ver2_len GREATER 15)
+        string(SUBSTRING "${VERSION_STRING_2}" 0 15 VERSION_STRING_2)
+        message(WARNING "VERSION_STRING_2 truncated to 15 characters: '${VERSION_STRING_2}'")
+    endif()
     if(NOT EDITION_STRING)
         set(EDITION_STRING "Custom")
     endif()

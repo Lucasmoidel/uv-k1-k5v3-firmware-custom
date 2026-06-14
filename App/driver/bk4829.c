@@ -1152,9 +1152,8 @@ void BK4819_Sleep(void)
 void BK4819_StopTxTone(void)
 {
 	BK4819_SetScrambleFrequencyControlWord(0);
-    //BK4819_WriteRegister(BK4819_REG_70, 0);
     //BK4819_SetAF(BK4819_AF_MUTE);
-    BK4819_WriteRegister(BK4819_REG_30, // turn off the TX ADC
+    BK4819_WriteRegister(BK4819_REG_30, // turn off only the TX DSP to prevent lingering beep transmission
 		BK4819_REG_30_ENABLE_VCO_CALIB   |
 		BK4819_REG_30_ENABLE_UNKNOWN     |
 		BK4819_REG_30_DISABLE_RX_LINK    |
@@ -1162,7 +1161,7 @@ void BK4819_StopTxTone(void)
 		BK4819_REG_30_ENABLE_DISC_MODE   |
 		BK4819_REG_30_ENABLE_PLL_VCO     |
 		BK4819_REG_30_ENABLE_PA_GAIN     |
-		BK4819_REG_30_DISABLE_MIC_ADC     |
+		BK4819_REG_30_ENABLE_MIC_ADC     |
 		BK4819_REG_30_DISABLE_TX_DSP      |
 		BK4819_REG_30_DISABLE_RX_DSP);
 

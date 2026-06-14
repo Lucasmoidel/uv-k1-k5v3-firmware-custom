@@ -127,6 +127,7 @@ const char gModulationStr[MODULATION_UKNOWN][4] = {
         BK4819_WriteRegister(0x55, 0x31A9);
     }
 
+#ifdef ENABLE_CW_MODULATOR
     static void AUDIO_ApplyCWProfile(void)
     {
         // AM SHARP values: narrow IF filter (REG54 bits[7:0]=9), low IF gain
@@ -135,6 +136,7 @@ const char gModulationStr[MODULATION_UKNOWN][4] = {
         BK4819_WriteRegister(0x54, 0x9009);
         BK4819_WriteRegister(0x55, 0x31A9);
     }
+#endif
 #endif
 
 bool RADIO_CheckValidList(uint8_t scanList)
@@ -409,7 +411,11 @@ void RADIO_ConfigureChannel(const unsigned int VFO, const unsigned int configure
 			#ifdef ENABLE_EXTRA_FILTER
 				// For CW/SSB, bit 6 encodes NARROWEST instead of TX_LOCK
 				// (TX_LOCK is inapplicable to those modes).
-				if ((pVfo->Modulation == MODULATION_CW || pVfo->Modulation == MODULATION_USB)
+				if (((
+#ifdef ENABLE_CW_MODULATOR
+				    pVfo->Modulation == MODULATION_CW ||
+#endif
+				    pVfo->Modulation == MODULATION_USB))
 				    && ((d4 >> 6) & 1u)) {
 					pVfo->CHANNEL_BANDWIDTH = BANDWIDTH_NARROWEST;
 					pVfo->TX_LOCK = false;
