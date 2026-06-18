@@ -38,6 +38,7 @@ typedef struct {
 	uint8_t pattern;  // Bit pattern: 0=dit, 1=dah, LSB first
 } MorseCode_t;
 
+// bits in the lookup table are element-order-BACKWARDS, pop the stack.
 static const MorseCode_t MORSE_TABLE[] = {
 	// Letters A-Z (LSB first: bit 0 = first element, 0=dit, 1=dah)
 	{'A', 2, 0b10},      // .-
@@ -78,12 +79,15 @@ static const MorseCode_t MORSE_TABLE[] = {
 	{'8', 5, 0b00111},     // ---..
 	{'9', 5, 0b01111},    // ----.
 	// Punctuation
-	{'/', 5, 0b01001},    // -..-.  DN
-	{'?', 6, 0b001100},   // ..--..  IM
-	{'.', 6, 0b101010},   // .-.-.-  AAA
-	{',', 6, 0b110011},   // --..--  MIM
-	{'=', 5, 0b10001},    // -...-   BT
-	{'-', 6, 0b100001},   // -....-  BA
+	{'/', 5, 0b01001},    // -..-.
+	{'?', 6, 0b001100},   // ..--..
+	{'.', 6, 0b101010},   // .-.-.- 
+	{',', 6, 0b110011},   // --..--
+	{'=', 5, 0b10001},    // -...-   BT prosign
+	{'-', 6, 0b100001},   // -....-
+	{'+', 5, 0b01010},   // .-.-. AR prosign
+	{'(', 5, 0b01101},   // -.--.  KN prosign
+	{'&', 5, 0b00010}    // .-...  AS prosign
 };
 #define MORSE_TABLE_SIZE (sizeof(MORSE_TABLE) / sizeof(MORSE_TABLE[0]))
 
@@ -118,13 +122,14 @@ static const uint16_t MACRO_ADDRS[CW_MACRO_COUNT] = {
 
 bool CW_ValidateChar(char ch)
 {
-	// Valid characters: A-Z, 0-9, '/', '?', '.', ',', '=', '-'
-	if (ch >= 'A' && ch <= 'Z')
-		return true;
-	if (ch >= '/' && ch <= '9')  // '/' to '9' are contiguous in ASCII
-		return true;
-	if (ch == '?' || ch == '.' || ch == ',' || ch == '=' || ch == '-')
-		return true;
+	// A-Z
+	if (ch >= 'A' && ch <= 'Z') return true;
+	// '+' (43) through '9' (57): +,-./ and 0-9, all contiguous and all valid
+	if (ch >= '+' && ch <= '9') return true;
+	if (ch == '&') return true;
+	if (ch == '(') return true;
+	if (ch == '=') return true;
+	if (ch == '?') return true;
 	return false;
 }
 
