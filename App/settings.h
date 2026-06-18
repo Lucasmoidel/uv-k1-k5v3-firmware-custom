@@ -80,8 +80,9 @@ static const uint8_t CW_KEY_INPUT_menu_to_bitmap[10] = {
 #define CW_KEY_INPUT_HANDKEY 0x08 // shortcut for the default no-keyer mode (menu item 0)
 
 enum CW_IambicMode_t {
-	CW_IAMBIC_MODE_A = 0,
-	CW_IAMBIC_MODE_B
+	CW_IAMBIC_MODE_A   = 0,
+	CW_IAMBIC_MODE_B   = 1,
+	CW_IAMBIC_MODE_BUG = 2,
 };
 typedef enum CW_IambicMode_t CW_IambicMode_t;
 

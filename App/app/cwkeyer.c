@@ -65,6 +65,17 @@ typedef enum {
 
 static CW_KeyerFSMState_t s_KeyerFSMState = CWK_STATE_IDLE;
 
+// Bug (semi-automatic) keyer FSM states
+typedef enum {
+    BUG_STATE_IDLE = 0,
+    BUG_STATE_DIT_ELEMENT,  // carrier on, timing dit duration
+    BUG_STATE_DIT_GAP,      // carrier off, inter-element gap (only while dit held)
+    BUG_STATE_DAH_HOLD,     // carrier on, operator-held dah
+} CW_BugFSMState_t;
+
+static CW_BugFSMState_t s_bug_state       = BUG_STATE_IDLE;
+static uint32_t         s_bug_phase_start = 0;
+
 // Internal keyer runtime state
 static uint16_t       s_dit_count  = 0;      // duration in timer ticks (16-bit)
 static uint16_t       s_dah_count  = 0;      // duration in timer ticks (16-bit)
@@ -123,6 +134,8 @@ void CW_KeyerResetRuntime(void)
     s_active_is_dit = false;
     s_pending_alternate = false;
     s_last_handkey_ptt = false;
+    s_bug_state = BUG_STATE_IDLE;
+    s_bug_phase_start = 0;
 
     // clear any stale edge memory
     CW_HW_ResetKeySamples();
@@ -551,6 +564,82 @@ CW_Action_t ptt_action(void)
     return action;
 }
 
+// Semi-automatic bug keyer FSM.  Dah is a raw handkey; dit auto-repeats at WPM timing.
+// Dah takes priority immediately; releasing either key stops it with no trailing gap or element.
+static CW_Action_t CW_HandleBugState(void)
+{
+    CW_Input in = {0};
+    CW_ReadKeys(&in);
+    const uint32_t now = millis();
+
+    switch (s_bug_state) {
+    case BUG_STATE_IDLE:
+        if (in.dah) {
+            s_bug_state = BUG_STATE_DAH_HOLD;
+            return CW_ACTION_CARRIER_ON;
+        }
+        if (in.dit) {
+            s_bug_phase_start = now;
+            s_elem_deadline_extra_ms = AUDIO_IsAudioPathOn() ? 0 : 20;
+            s_bug_state = BUG_STATE_DIT_ELEMENT;
+            return CW_ACTION_CARRIER_ON;
+        }
+        return CW_ACTION_NONE;
+
+    case BUG_STATE_DIT_ELEMENT:
+        if (in.dah) {
+            // Dah wins — take over carrier immediately with no gap
+            s_bug_state = BUG_STATE_DAH_HOLD;
+            return CW_ACTION_CARRIER_HOLD_ON;
+        }
+        if (millis_since(s_bug_phase_start) >= (uint32_t)(s_dit_count + s_elem_deadline_extra_ms)) {
+            // Element complete — always finish the full dit before stopping
+            CW_EncoderProcessElement(CW_ELEMENT_DIT);
+            s_elem_deadline_extra_ms = 0;
+            s_bug_phase_start = now;
+            // Gap and repeat only if dit is still held at completion; else return to idle
+            s_bug_state = in.dit ? BUG_STATE_DIT_GAP : BUG_STATE_IDLE;
+            return CW_ACTION_CARRIER_OFF;
+        }
+        return CW_ACTION_CARRIER_HOLD_ON;
+
+    case BUG_STATE_DIT_GAP:
+        if (in.dah) {
+            s_bug_state = BUG_STATE_DAH_HOLD;
+            return CW_ACTION_CARRIER_ON;
+        }
+        if (!in.dit) {
+            // Released during gap — no next element
+            s_bug_state = BUG_STATE_IDLE;
+            return CW_ACTION_NONE;
+        }
+        if (millis_since(s_bug_phase_start) >= (uint32_t)s_gap_count) {
+            s_bug_phase_start = now;
+            s_bug_state = BUG_STATE_DIT_ELEMENT;
+            return CW_ACTION_CARRIER_ON;
+        }
+        return CW_ACTION_NONE;
+
+    case BUG_STATE_DAH_HOLD:
+        if (in.dah) {
+            return CW_ACTION_CARRIER_HOLD_ON;
+        }
+        // Dah released — log element and immediately consider dit
+        CW_EncoderProcessElement(CW_ELEMENT_DAH);
+        if (in.dit) {
+            // Seamless transition: carrier stays on as the first dit element begins
+            s_bug_phase_start = now;
+            s_elem_deadline_extra_ms = 0;
+            s_bug_state = BUG_STATE_DIT_ELEMENT;
+            return CW_ACTION_CARRIER_HOLD_ON;
+        }
+        s_bug_state = BUG_STATE_IDLE;
+        return CW_ACTION_CARRIER_OFF;
+    }
+
+    return CW_ACTION_NONE;
+}
+
 // Manage CW sending - called via main->CW_AppUpdate() every 1 ms.
 // Uses millis() to manage deadlines for element duration and spacing.
 CW_Action_t CW_HandleState(void)
@@ -559,7 +648,7 @@ CW_Action_t CW_HandleState(void)
     CW_Action_t action = CW_ACTION_NONE;
 
     // Apply pending init if needed.
-    if (s_cfg_dirty && s_KeyerFSMState == CWK_STATE_IDLE) {
+    if (s_cfg_dirty && s_KeyerFSMState == CWK_STATE_IDLE && s_bug_state == BUG_STATE_IDLE) {
         // Defer applying configuration while we're inside a potential word gap
         // so we don't reset timing before an inter-word space can be detected.
 #if CW_KEYER_DEBUG
@@ -583,6 +672,11 @@ CW_Action_t CW_HandleState(void)
     // Check if keyer is disabled (handkey modes have NO_KEYER flag set)
     if (gEeprom.CW_KEY_INPUT & CW_KEY_FLAG_NO_KEYER) {
         return ptt_action();
+    }
+
+    // Semi-automatic bug keyer runs its own FSM
+    if (gEeprom.CW_KEYER_MODE == CW_IAMBIC_MODE_BUG) {
+        return CW_HandleBugState();
     }
 
     // Input struct - will be sampled at appropriate times in each state

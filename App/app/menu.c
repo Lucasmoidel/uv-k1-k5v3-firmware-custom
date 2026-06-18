@@ -406,7 +406,7 @@ int MENU_GetLimits(uint8_t menu_id, int32_t *pMin, int32_t *pMax)
 
 		case MENU_CW_KEYER_MODE:
 			*pMin = 0;
-			*pMax = 1;
+			*pMax = 2;
 			break;
 
 		case MENU_CW_KEY_WPM:

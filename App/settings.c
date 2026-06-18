@@ -364,8 +364,16 @@ gEeprom.FreqChannel[1]   = IS_FREQ_CHANNEL(Data16[5]) ? Data16[5] : (FREQ_CHANNE
 	PY25Q16_ReadBuffer(0x00A140, Data, 8);
 	gEeprom.CW_TONE_FREQUENCY = Data[0] == 0xff ? 60 : 45 + (Data[0] & 0xf) * 5;  // Same as gMenuSelection: 50 Hz steps from 450, default 600
 	gEeprom.CW_SIDETONE_LEVEL = Data[0] == 0xff ? 4*21 : ((Data[0] >> 4) & 0x07) * 21;  // levels 0-6 scaled by 21 (max 6*21=126), default 4*21=105
-	gEeprom.CW_KEYER_MODE     = (Data[1] & 0x80) ? CW_IAMBIC_MODE_B : CW_IAMBIC_MODE_A;  // bit 7: 0=A, 1=B
 	gEeprom.CW_KEY_WPM        = ((Data[1] & 0x7f) <= 40 && (Data[1] & 0x7f) >= 10) ? Data[1] & 0x7f : 18;  // bits 0-6, valid range 10-40, default 18 WPM
+	// Data[4]: keyer mode byte. 0xFF = not yet written (old layout packed mode into bit 7
+	// of Data[1]). Carry-over: read legacy bit if Data[1] is valid, then always
+	// write the new byte on next save. Blank EEPROM (Data[1]==0xFF) defaults to mode B.
+	if (Data[4] <= CW_IAMBIC_MODE_BUG) {
+		gEeprom.CW_KEYER_MODE = (CW_IambicMode_t)Data[4];
+	} else {
+		// 0xFF or out of range: migrate from old bit-7 layout, always default to B
+		gEeprom.CW_KEYER_MODE = CW_IAMBIC_MODE_B;
+	}
 	gEeprom.CW_KEY_INPUT_MENU      = (Data[2] < 0x80) ? MIN((Data[2] & 0x0F), 9) : 0;  // bits 0-3, range 0-9, default HANDKEY
 	gEeprom.CW_KEY_INPUT 	  = CW_KEY_INPUT_menu_to_bitmap[gEeprom.CW_KEY_INPUT_MENU];
 	gEeprom.CW_BREAKIN_ENABLE	  = (Data[2] < 0x80) ? ((Data[2] >> 6) & 0x01) : 1;  // bit 6: 0=break-in off, 1=break-in on, default on
@@ -1073,11 +1081,11 @@ void SETTINGS_SaveSettings(void)
     // Convert sidetone level back to 0-6 range for storage
     uint8_t level = gEeprom.CW_SIDETONE_LEVEL / 21;
 	State[0] = (gEeprom.CW_TONE_FREQUENCY - 45) / 5 | ((level & 0x07) << 4);
-	State[1] = (gEeprom.CW_KEYER_MODE << 7) | (gEeprom.CW_KEY_WPM & 0x7F);  // mode in bit 7 (0=A, 1=B), WPM in bits 0-6
+	State[1] = gEeprom.CW_KEY_WPM & 0x7F;  // WPM in bits 0-6; keyer mode moved to State[4]
 	State[2] = (gEeprom.CW_KEY_INPUT_MENU & 0x1F) | ((gEeprom.CW_BREAKIN_ENABLE & 0x01) << 6);  // key input in bits 0-4, breakin bit 6
 	// State[3]: store menu value (delay/2) in bits 0-6, clear high bit to mark valid
 	State[3] = (gEeprom.CW_MESSAGE_REPEAT_DELAY) & 0x7F;
-	State[4] = 0xFF;  // unused (was CW_ADC_CABLE_10K low)
+	State[4] = (uint8_t)gEeprom.CW_KEYER_MODE;  // keyer mode: 0=A, 1=B, 2=Bug
 	State[5] = 0xFF;  // unused (was CW_ADC_CABLE_10K high)
 	State[6] = 0xFF;  // unused (was CW_ADC_CABLE_20K low)
 	State[7] = 0xFF;  // unused (was CW_ADC_CABLE_20K high)
