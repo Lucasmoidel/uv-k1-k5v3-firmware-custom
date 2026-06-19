@@ -71,6 +71,7 @@ typedef enum {
     BUG_STATE_DIT_ELEMENT,  // carrier on, timing dit duration
     BUG_STATE_DIT_GAP,      // carrier off, inter-element gap (only while dit held)
     BUG_STATE_DAH_HOLD,     // carrier on, operator-held dah
+    BUG_STATE_CHAR_GAP,     // carrier off, timing inter-char gap (mirrors CWK_STATE_INTER_CHAR_GAP)
 } CW_BugFSMState_t;
 
 static CW_BugFSMState_t s_bug_state       = BUG_STATE_IDLE;
@@ -597,8 +598,8 @@ static CW_Action_t CW_HandleBugState(void)
             CW_EncoderProcessElement(CW_ELEMENT_DIT);
             s_elem_deadline_extra_ms = 0;
             s_bug_phase_start = now;
-            // Gap and repeat only if dit is still held at completion; else return to idle
-            s_bug_state = in.dit ? BUG_STATE_DIT_GAP : BUG_STATE_IDLE;
+            // Gap and repeat only if dit is still held at completion; else start the char gap
+            s_bug_state = in.dit ? BUG_STATE_DIT_GAP : BUG_STATE_CHAR_GAP;
             return CW_ACTION_CARRIER_OFF;
         }
         return CW_ACTION_CARRIER_HOLD_ON;
@@ -609,8 +610,9 @@ static CW_Action_t CW_HandleBugState(void)
             return CW_ACTION_CARRIER_ON;
         }
         if (!in.dit) {
-            // Released during gap — no next element
-            s_bug_state = BUG_STATE_IDLE;
+            // Released during gap — no next element, start the char gap
+            s_bug_phase_start = now;
+            s_bug_state = BUG_STATE_CHAR_GAP;
             return CW_ACTION_NONE;
         }
         if (millis_since(s_bug_phase_start) >= (uint32_t)s_gap_count) {
@@ -633,8 +635,27 @@ static CW_Action_t CW_HandleBugState(void)
             s_bug_state = BUG_STATE_DIT_ELEMENT;
             return CW_ACTION_CARRIER_HOLD_ON;
         }
-        s_bug_state = BUG_STATE_IDLE;
+        s_bug_phase_start = now;
+        s_bug_state = BUG_STATE_CHAR_GAP;
         return CW_ACTION_CARRIER_OFF;
+
+    case BUG_STATE_CHAR_GAP:
+        if (in.dah) {
+            s_bug_state = BUG_STATE_DAH_HOLD;
+            return CW_ACTION_CARRIER_ON;
+        }
+        if (in.dit) {
+            s_bug_phase_start = now;
+            s_elem_deadline_extra_ms = AUDIO_IsAudioPathOn() ? 0 : 20;
+            s_bug_state = BUG_STATE_DIT_ELEMENT;
+            return CW_ACTION_CARRIER_ON;
+        }
+        if (millis_since(s_bug_phase_start) >= (uint32_t)s_char_gap_count) {
+            // Char gap complete — character boundary reached
+            CW_EncoderProcessElement(CW_ELEMENT_INTER_CHAR_SPACE);
+            s_bug_state = BUG_STATE_IDLE;
+        }
+        return CW_ACTION_NONE;
     }
 
     return CW_ACTION_NONE;
