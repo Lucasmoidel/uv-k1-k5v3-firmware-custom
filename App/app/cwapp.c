@@ -153,7 +153,6 @@ void CW_AppUpdate(void)
 			gTxTimerCountdown_500ms = 0;
 			gCW_TxDisplayHoldoff_10ms = 200;
 			gPttIsPressed = true;
-			BACKLIGHT_TurnOn();
 
 			if (gCW_State == CW_INACTIVE)
 			{
