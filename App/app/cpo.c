@@ -142,6 +142,10 @@ void CPO_ProcessKeys(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
 		gUpdateDisplay = true;
 #endif
 		break;
+	case KEY_5:
+		CW_ClearTxDisplay();
+		gUpdateDisplay = true;
+		break;
 
 	default:
 		break;
