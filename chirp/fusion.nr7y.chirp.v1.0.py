@@ -792,7 +792,8 @@ _NR7Y_KEYACTIONS_LIST = [
     "REPEAT CW MSG 2", # 28: ACTION_OPT_REPEAT_CWMSG2
     "REPEAT CW MSG 3", # 29: ACTION_OPT_REPEAT_CWMSG3
     "REPEAT CW MSG 4", # 30: ACTION_OPT_REPEAT_CWMSG4
-    "BEAM",            # 31: ACTION_OPT_BEAM           (ENABLE_FEAT_F4HWN_BEAM)
+    "CW Practice Osc", # 31: ACTION_OPT_CPO (CW firmware)
+    "BEAM",            # 32: ACTION_OPT_BEAM           (ENABLE_FEAT_F4HWN_BEAM)
 ]
 
 def xorarr(data: bytes):
