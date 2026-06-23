@@ -52,7 +52,9 @@ void ACTION_SwitchFilter(void);
         void ACTION_Remove_Offset(void);
     #endif
 #endif
-
+#ifdef ENABLE_CW_MODULATOR
+    void ACTION_CPO(void);
+#endif
 void ACTION_Handle(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld);
 
 #endif
