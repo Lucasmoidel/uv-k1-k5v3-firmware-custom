@@ -72,6 +72,8 @@ KEYACTIONS_LIST = [
     "Repeat CW MSG 2",           # 19: ACTION_OPT_REPEAT_CWMSG2 (beta3)
     "Repeat CW MSG 3",           # 20: ACTION_OPT_REPEAT_CWMSG3 (beta3)
     "Repeat CW MSG 4",           # 21: ACTION_OPT_REPEAT_CWMSG4 (beta3)
+    "CW Practice Osc",    # 22: ACTION_OPT_CPO (CW firmware)
+
     # SPECTRUM disabled due to lack of space
 ]
 
