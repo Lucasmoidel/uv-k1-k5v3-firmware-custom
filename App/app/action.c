@@ -51,6 +51,10 @@
 
 #ifdef ENABLE_CW_MODULATOR
 #include "app/cwkeyer.h"
+
+    #ifdef ENABLE_CODE_PRACTICE
+        #include "app/cpo.h"
+    #endif
 #endif
 
 #if defined(ENABLE_FMRADIO)
@@ -66,7 +70,6 @@ inline static void ACTION_1750() { ACTION_AlarmOr1750(true); };
 inline static void ACTION_ScanRestart() { ACTION_Scan(true); };
 
 #ifdef ENABLE_CW_MODULATOR
-static void ACTION_CPO(void);
 static void ACTION_PlayCWMsg1(void);
 static void ACTION_PlayCWMsg2(void);
 static void ACTION_PlayCWMsg3(void);
@@ -75,6 +78,9 @@ static void ACTION_RepeatCWMsg1(void);
 static void ACTION_RepeatCWMsg2(void);
 static void ACTION_RepeatCWMsg3(void);
 static void ACTION_RepeatCWMsg4(void);
+#ifdef ENABLE_CODE_PRACTICE
+static void ACTION_CPO(void);
+#endif
 #endif
 
 void (*action_opt_table[])(void) = {
@@ -124,8 +130,7 @@ void (*action_opt_table[])(void) = {
 #endif
 
 #ifdef ENABLE_CW_MODULATOR
-    [ACTION_OPT_CPO] = &ACTION_CPO,
-	[ACTION_OPT_PLAY_CWMSG1] = &ACTION_PlayCWMsg1,
+    [ACTION_OPT_PLAY_CWMSG1] = &ACTION_PlayCWMsg1,
 	[ACTION_OPT_PLAY_CWMSG2] = &ACTION_PlayCWMsg2,
 	[ACTION_OPT_PLAY_CWMSG3] = &ACTION_PlayCWMsg3,
 	[ACTION_OPT_PLAY_CWMSG4] = &ACTION_PlayCWMsg4,
@@ -133,6 +138,9 @@ void (*action_opt_table[])(void) = {
 	[ACTION_OPT_REPEAT_CWMSG2] = &ACTION_RepeatCWMsg2,
 	[ACTION_OPT_REPEAT_CWMSG3] = &ACTION_RepeatCWMsg3,
 	[ACTION_OPT_REPEAT_CWMSG4] = &ACTION_RepeatCWMsg4,
+    #ifdef ENABLE_CODE_PRACTICE
+    [ACTION_OPT_CPO] = &ACTION_CPO,
+	#endif
 #endif
 
 #ifdef ENABLE_FEAT_F4HWN
@@ -539,14 +547,19 @@ static void ACTION_Scan_FM(bool bRestart)
 #endif
 
 #ifdef ENABLE_CW_MODULATOR
+
+#ifdef ENABLE_CODE_PRACTICE
+
 static void ACTION_CPO(void)
 {
     gTxVfo->Modulation = MODULATION_CW;
-    CPO_Enter();
-    CPO_Exit();
+	gFlagReconfigureVfos = true;
+
     CPO_Enter();
 
 }
+
+#endif
 
 static void ACTION_PlayCWMsg1(void)
 {
