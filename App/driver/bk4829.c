@@ -1152,30 +1152,10 @@ void BK4819_Sleep(void)
 void BK4819_StopTxTone(void)
 {
 	BK4819_SetScrambleFrequencyControlWord(0);
-    //BK4819_SetAF(BK4819_AF_MUTE);
-    BK4819_WriteRegister(BK4819_REG_30, // turn off only the TX DSP to prevent lingering beep transmission
-		BK4819_REG_30_ENABLE_VCO_CALIB   |
-		BK4819_REG_30_ENABLE_UNKNOWN     |
-		BK4819_REG_30_DISABLE_RX_LINK    |
-		BK4819_REG_30_DISABLE_AF_DAC     |
-		BK4819_REG_30_ENABLE_DISC_MODE   |
-		BK4819_REG_30_ENABLE_PLL_VCO     |
-		BK4819_REG_30_ENABLE_PA_GAIN     |
-		BK4819_REG_30_ENABLE_MIC_ADC     |
-		BK4819_REG_30_DISABLE_TX_DSP      |
-		BK4819_REG_30_DISABLE_RX_DSP);
-
-    // BK4819_WriteRegister(BK4819_REG_30, // 0xC1FE equivalent...
-	// 	BK4819_REG_30_ENABLE_VCO_CALIB   |
-	// 	BK4819_REG_30_ENABLE_UNKNOWN     |
-	// 	BK4819_REG_30_DISABLE_RX_LINK    |
-	// 	BK4819_REG_30_DISABLE_AF_DAC     |
-	// 	BK4819_REG_30_ENABLE_DISC_MODE   |
-	// 	BK4819_REG_30_ENABLE_PLL_VCO     |
-	// 	BK4819_REG_30_ENABLE_PA_GAIN     |
-	// 	BK4819_REG_30_ENABLE_MIC_ADC     |
-	// 	BK4819_REG_30_ENABLE_TX_DSP      |
-	// 	BK4819_REG_30_DISABLE_RX_DSP);
+	// Clear only TX_DSP relative to the current (TX-link) register state.
+	// AF_DAC must stay enabled (toggling it causes the BK4829 pop) 
+    // and MIC_ADC must stay disabled (CW has no mic input).
+	BK4819_WriteRegister(BK4819_REG_30, reg_30_cache & ~BK4819_REG_30_ENABLE_TX_DSP);
 }
 
 void BK4819_TurnsOffTones_TurnsOnRX(void)
