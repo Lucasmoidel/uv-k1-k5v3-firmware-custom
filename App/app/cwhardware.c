@@ -139,9 +139,9 @@ static bool CW_ReadGpioDeglitched(GPIO_TypeDef *gpio_port, uint32_t pin_mask, bo
 
 // 64 samples at 48 MHz ≈ 3 µs total, negligible overhead.
 // Threshold 40/64 (62.5%) leaves headroom for up to 24 noise samples per burst.
-#define MV_SAMPLES   64U
-#define MV_THRESHOLD 40U   // ≥40 LOW samples (of 64) = pin is pressed
-
+#define MV_SAMPLES   100U
+#define MV_THRESHOLD 65U   // ≥65 LOW samples (of 80) = pin is pressed
+    
 static bool CW_ReadGpioMajority(GPIO_TypeDef *gpio_port, uint32_t pin_mask, uint32_t other_pin_mask)
 {
     // opposing pin as output low
