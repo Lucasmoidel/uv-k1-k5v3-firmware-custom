@@ -72,6 +72,7 @@ typedef enum {
     BUG_STATE_DIT_GAP,      // carrier off, inter-element gap (only while dit held)
     BUG_STATE_DAH_HOLD,     // carrier on, operator-held dah
     BUG_STATE_CHAR_GAP,     // carrier off, timing inter-char gap (mirrors CWK_STATE_INTER_CHAR_GAP)
+    BUG_STATE_WORD_GAP,     // carrier off, timing inter-word gap (mirrors CWK_STATE_INTER_WORD_GAP)
 } CW_BugFSMState_t;
 
 static CW_BugFSMState_t s_bug_state       = BUG_STATE_IDLE;
@@ -588,24 +589,21 @@ static CW_Action_t CW_HandleBugState(void)
         return CW_ACTION_NONE;
 
     case BUG_STATE_DIT_ELEMENT:
-        if (in.dah) {
-            // Dah wins — take over carrier immediately with no gap
-            s_bug_state = BUG_STATE_DAH_HOLD;
-            return CW_ACTION_CARRIER_HOLD_ON;
-        }
         if (millis_since(s_bug_phase_start) >= (uint32_t)(s_dit_count + s_elem_deadline_extra_ms)) {
             // Element complete — always finish the full dit before stopping
             CW_EncoderProcessElement(CW_ELEMENT_DIT);
             s_elem_deadline_extra_ms = 0;
             s_bug_phase_start = now;
             // Gap and repeat only if dit is still held at completion; else start the char gap
-            s_bug_state = in.dit ? BUG_STATE_DIT_GAP : BUG_STATE_CHAR_GAP;
+            //s_bug_state = in.dit ? BUG_STATE_DIT_GAP : BUG_STATE_CHAR_GAP;
+            s_bug_state = BUG_STATE_DIT_GAP;
             return CW_ACTION_CARRIER_OFF;
         }
         return CW_ACTION_CARRIER_HOLD_ON;
 
     case BUG_STATE_DIT_GAP:
         if (in.dah) {
+            s_bug_phase_start = now;
             s_bug_state = BUG_STATE_DAH_HOLD;
             return CW_ACTION_CARRIER_ON;
         }
@@ -626,33 +624,50 @@ static CW_Action_t CW_HandleBugState(void)
         if (in.dah) {
             return CW_ACTION_CARRIER_HOLD_ON;
         }
-        // Dah released — log element and immediately consider dit
-        CW_EncoderProcessElement(CW_ELEMENT_DAH);
-        if (in.dit) {
-            // Seamless transition: carrier stays on as the first dit element begins
-            s_bug_phase_start = now;
-            s_elem_deadline_extra_ms = 0;
-            s_bug_state = BUG_STATE_DIT_ELEMENT;
-            return CW_ACTION_CARRIER_HOLD_ON;
+
+        if(millis_since(s_bug_phase_start) >= (uint32_t)s_gap_count) {
+            // only encode the non-glitchy elements
+            CW_EncoderProcessElement(CW_ELEMENT_DAH);
         }
+
         s_bug_phase_start = now;
-        s_bug_state = BUG_STATE_CHAR_GAP;
+        //s_bug_state = BUG_STATE_CHAR_GAP;
+        s_bug_state = BUG_STATE_DIT_GAP; // make an element gap
         return CW_ACTION_CARRIER_OFF;
 
     case BUG_STATE_CHAR_GAP:
         if (in.dah) {
+            s_bug_phase_start = now;
             s_bug_state = BUG_STATE_DAH_HOLD;
             return CW_ACTION_CARRIER_ON;
         }
         if (in.dit) {
             s_bug_phase_start = now;
-            s_elem_deadline_extra_ms = AUDIO_IsAudioPathOn() ? 0 : 20;
             s_bug_state = BUG_STATE_DIT_ELEMENT;
             return CW_ACTION_CARRIER_ON;
         }
         if (millis_since(s_bug_phase_start) >= (uint32_t)s_char_gap_count) {
-            // Char gap complete — character boundary reached
+            // Char gap complete — character boundary reached. Carry over the
+            // gap timer (mirrors CWK_STATE_INTER_CHAR_GAP -> CWK_STATE_INTER_WORD_GAP).
             CW_EncoderProcessElement(CW_ELEMENT_INTER_CHAR_SPACE);
+            s_bug_state = BUG_STATE_WORD_GAP;
+        }
+        return CW_ACTION_NONE;
+
+    case BUG_STATE_WORD_GAP:
+        if (in.dah) {
+            s_bug_phase_start = now;
+            s_bug_state = BUG_STATE_DAH_HOLD;
+            return CW_ACTION_CARRIER_ON;
+        }
+        if (in.dit) {
+            s_bug_phase_start = now;
+            s_bug_state = BUG_STATE_DIT_ELEMENT;
+            return CW_ACTION_CARRIER_ON;
+        }
+        if (millis_since(s_bug_phase_start) >= (uint32_t)s_word_gap_count) {
+            // Word gap complete
+            CW_EncoderProcessElement(CW_ELEMENT_INTER_WORD_SPACE);
             s_bug_state = BUG_STATE_IDLE;
         }
         return CW_ACTION_NONE;
