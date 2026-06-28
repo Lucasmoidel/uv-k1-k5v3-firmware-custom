@@ -736,12 +736,13 @@ CW_Action_t CW_HandleState(void)
             UART_Send("keyer is idle\r\n", 15);
 #endif
         if (in.dit || in.dah) {
-            // Explicit handling when both paddles are pressed:
-            // If both pressed and previous element was a dit, choose dah; otherwise choose dit.
             if (in.dit && !in.dah) {
                 s_active_is_dit = true;
             } else if (in.dah && !in.dit) {
                 s_active_is_dit = false;
+            } else if (gEeprom.CW_KEYER_MODE == CW_KEYER_MODE_ULTIMATIC) {
+                // both pressed -> send whichever paddle was pressed last
+                s_active_is_dit = !in.last_is_dah;
             } else {
                 // both pressed -> toggle previous element type (dit->dah, dah->dit)
                 s_active_is_dit = !s_active_is_dit;
@@ -776,12 +777,15 @@ CW_Action_t CW_HandleState(void)
             }
         }
 #endif
-        // Sample paddles for memory logic - skip if we already know alternate is pending
+        // Sample paddles for memory logic - skip if we already know alternate is pending.
+        // Ultimatic never sets s_pending_alternate here, so it always reads (decisions
+        // are made fresh at the next gap, not queued via memory).
         if(!s_pending_alternate)
         {
             CW_ReadKeys(&in);
-        
-            // Memory logic: depends on keyer mode and element type
+
+            // Memory logic: depends on keyer mode and element type. Ultimatic has no
+            // memory queueing at all - it falls through after the read above.
             if (gEeprom.CW_KEYER_MODE == CW_IAMBIC_MODE_A) {
                 // Type A: Purely edge detection for opposite paddle throughout element
                 if (s_active_is_dit && in.dah_rise) {
@@ -789,7 +793,7 @@ CW_Action_t CW_HandleState(void)
                 } else if (!s_active_is_dit && in.dit_rise) {
                     s_pending_alternate = true;
                 }
-            } else {
+            } else if (gEeprom.CW_KEYER_MODE == CW_IAMBIC_MODE_B) {
                 // "Elecraft style" Type B with an edge-trigger during the first third of a dah
                 // (so holding the alternate on the way into the element won't trigger it)
                 if ((!s_active_is_dit) && (elapsed_elem < s_dit_count)) {
@@ -838,22 +842,17 @@ CW_Action_t CW_HandleState(void)
         {
             // keep doing sampling during gap for memory logic
             CW_ReadKeys(&in);
-        
-            // Mode A style Edge detection for opposite key throughout element AND gap, but for both modes
-            if (s_active_is_dit && in.dah_rise) {
-                s_pending_alternate = true;
-            } else if (!s_active_is_dit && in.dit_rise) {
-                s_pending_alternate = true;
+
+            // Mode A style Edge detection for opposite key throughout element AND gap, but for
+            // both iambic modes. Ultimatic doesn't queue an alternate here - its next element
+            // is decided fresh below, every time, from current paddle state.
+            if (gEeprom.CW_KEYER_MODE != CW_KEYER_MODE_ULTIMATIC) {
+                if (s_active_is_dit && in.dah_rise) {
+                    s_pending_alternate = true;
+                } else if (!s_active_is_dit && in.dit_rise) {
+                    s_pending_alternate = true;
+                }
             }
-            // I think we don't want B reading during gap? this was probably the double-dit problem.
-            // else {
-            //     // Standard Type B logic: state detection
-            //     if (s_active_is_dit && in.dah) {
-            //         s_pending_alternate = true;
-            //     } else if (!s_active_is_dit && in.dit) {
-            //         s_pending_alternate = true;
-            //     }
-            // }
         }
         if (elapsed_gap >= s_gap_count) {
 
@@ -880,6 +879,9 @@ CW_Action_t CW_HandleState(void)
                         next_is_dit = true;
                     } else if (in.dah && !in.dit) {
                         next_is_dit = false;
+                    } else if (gEeprom.CW_KEYER_MODE == CW_KEYER_MODE_ULTIMATIC) {
+                        // both pressed -> send whichever paddle was pressed last
+                        next_is_dit = !in.last_is_dah;
                     } else { /* both pressed -> choose opposite of previous */
                         next_is_dit = !s_active_is_dit;
                     }
@@ -923,6 +925,9 @@ CW_Action_t CW_HandleState(void)
                         s_active_is_dit = true;
                     } else if (in.dah && !in.dit) {
                         s_active_is_dit = false;
+                    } else if (gEeprom.CW_KEYER_MODE == CW_KEYER_MODE_ULTIMATIC) {
+                        // both pressed -> send whichever paddle was pressed last
+                        s_active_is_dit = !in.last_is_dah;
                     } else { // both pressed -> toggle previous
                         s_active_is_dit = !s_active_is_dit;
                     }
@@ -935,7 +940,12 @@ CW_Action_t CW_HandleState(void)
 			    // Hold period (ext_gap <= elapsed < char_gap): queue key but wait for char_gap deadline
 			    if (have_key && !s_pending_alternate) {
 				    s_pending_alternate = true;
-				    s_active_is_dit = in.dit;
+				    if (gEeprom.CW_KEYER_MODE == CW_KEYER_MODE_ULTIMATIC && in.dit && in.dah) {
+				        // both pressed -> send whichever paddle was pressed last
+				        s_active_is_dit = !in.last_is_dah;
+				    } else {
+				        s_active_is_dit = in.dit;
+				    }
 			    }
             }
 
@@ -980,7 +990,12 @@ CW_Action_t CW_HandleState(void)
         CW_ReadKeys(&in);
 		
         if (in.dit || in.dah) {
-            s_active_is_dit = in.dit;
+            if (gEeprom.CW_KEYER_MODE == CW_KEYER_MODE_ULTIMATIC && in.dit && in.dah) {
+                // both pressed -> send whichever paddle was pressed last
+                s_active_is_dit = !in.last_is_dah;
+            } else {
+                s_active_is_dit = in.dit;
+            }
 			s_elem_start_count = cur_count;
 			s_KeyerFSMState = CWK_STATE_ACTIVE_ELEMENT;
 			action = CW_ACTION_CARRIER_ON;

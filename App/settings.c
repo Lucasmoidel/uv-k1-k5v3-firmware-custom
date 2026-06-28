@@ -1085,7 +1085,7 @@ void SETTINGS_SaveSettings(void)
 	State[2] = (gEeprom.CW_KEY_INPUT_MENU & 0x1F) | ((gEeprom.CW_BREAKIN_ENABLE & 0x01) << 6);  // key input in bits 0-4, breakin bit 6
 	// State[3]: store menu value (delay/2) in bits 0-6, clear high bit to mark valid
 	State[3] = (gEeprom.CW_MESSAGE_REPEAT_DELAY) & 0x7F;
-	State[4] = (uint8_t)gEeprom.CW_KEYER_MODE;  // keyer mode: 0=A, 1=B, 2=Bug
+	State[4] = (uint8_t)gEeprom.CW_KEYER_MODE;  // keyer mode: 0=A, 1=B, 2=Ultimatic, 3=Bug
 	State[5] = 0xFF;  // unused (was CW_ADC_CABLE_10K high)
 	State[6] = 0xFF;  // unused (was CW_ADC_CABLE_20K low)
 	State[7] = 0xFF;  // unused (was CW_ADC_CABLE_20K high)

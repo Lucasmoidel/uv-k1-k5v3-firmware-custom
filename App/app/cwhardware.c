@@ -49,6 +49,7 @@ static bool     s_last_dit   = false;
 static bool     s_last_dah   = false;
 static uint32_t s_dit_count  = 0;  // consecutive raw-true reads for dit
 static uint32_t s_dah_count  = 0;  // consecutive raw-true reads for dah
+static bool     s_last_is_dah = false;  // which paddle was pressed most recently (for Ultimatic mode)
 
 // Read button ring input (SIDE1)
 static void CW_ReadSideButton(bool *ring_out)
@@ -240,6 +241,12 @@ void CW_ReadKeys(CW_Input *in)
     in->dit = deb_dit;
     in->dah = deb_dah;
 
+    // Track which paddle was pressed most recently (a fresh press is exactly
+    // a rising edge), for Ultimatic mode's "both held -> last one wins" rule.
+    if (in->dit_rise) s_last_is_dah = false;
+    else if (in->dah_rise) s_last_is_dah = true;
+    in->last_is_dah = s_last_is_dah;
+
     s_last_dit = deb_dit;
     s_last_dah = deb_dah;
 }
@@ -344,8 +351,9 @@ void CW_ConfigurePortRing(bool enable)
 // Reset sampled key states (used from keyer init)
 void CW_HW_ResetKeySamples(void)
 {
-    s_last_dit = false;
-    s_last_dah = false;
+    s_last_dit   = false;
+    s_last_dah   = false;
+    s_last_is_dah = false;
 }
 
 

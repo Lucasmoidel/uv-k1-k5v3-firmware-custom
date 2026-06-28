@@ -406,7 +406,7 @@ int MENU_GetLimits(uint8_t menu_id, int32_t *pMin, int32_t *pMax)
 
 		case MENU_CW_KEYER_MODE:
 			*pMin = 0;
-			*pMax = 2;
+			*pMax = 3;
 			break;
 
 		case MENU_CW_KEY_WPM:
@@ -1111,6 +1111,7 @@ void MENU_AcceptSetting(void)
 
 		case MENU_CW_KEYER_MODE:
 			gEeprom.CW_KEYER_MODE = gSubMenuSelection;
+			CW_KeyerResetRuntime();  // avoid stale squeeze/tracker state bleeding across mode switch
 			break;
 
 		case MENU_CW_BKIN:
