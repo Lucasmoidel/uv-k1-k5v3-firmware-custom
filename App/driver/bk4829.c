@@ -897,10 +897,13 @@ void BK4819_RX_TurnOn(void)
 	if(gRxVfo->Modulation == MODULATION_CW)
 		// For CW, skip REG_30=0 to avoid audio pop; keep AF DAC and VCO paths live
 		// during the RX→TX→RX transitions so the sidetone path stays warm.
+		// VCO_CALIB still needs a 0->1 edge here to relock to whatever frequency
+		// was just programmed (e.g. a channel/VFO change while CW monitoring) -
+		// see BK4819_TxOn_Beep for the TX-side version of this same bug.
 		BK4819_WriteRegister(BK4819_REG_30,
-			BK4819_REG_30_ENABLE_VCO_CALIB |
-			BK4819_REG_30_ENABLE_DISC_MODE |
-			BK4819_REG_30_ENABLE_PLL_VCO   |
+			BK4819_REG_30_DISABLE_VCO_CALIB |
+			BK4819_REG_30_ENABLE_DISC_MODE  |
+			BK4819_REG_30_ENABLE_PLL_VCO    |
 			BK4819_REG_30_ENABLE_AF_DAC);
 	else
 #endif
@@ -1281,10 +1284,15 @@ void BK4819_TxOn_Beep(void)
 		// Skip REG_30=0 reset to avoid audio pop during CW key-down.
 		// First write a safe transitional state keeping AF DAC and VCO alive,
 		// then switch to the full TX state (MIC ADC off since CW has no mic input).
+		// VCO_CALIB must still go 0->1 across these two writes: the chip only
+		// relocks the synthesizer to the frequency BK4819_SetFrequency() just
+		// wrote (RX-shifted -> real TX freq) on that rising edge. Leaving it
+		// at 1 throughout (the naive "stay warm" port) silently keeps
+		// transmitting on the old RX frequency.
 		BK4819_WriteRegister(BK4819_REG_30,
-			BK4819_REG_30_ENABLE_VCO_CALIB |
-			BK4819_REG_30_ENABLE_DISC_MODE |
-			BK4819_REG_30_ENABLE_PLL_VCO   |
+			BK4819_REG_30_DISABLE_VCO_CALIB |
+			BK4819_REG_30_ENABLE_DISC_MODE  |
+			BK4819_REG_30_ENABLE_PLL_VCO    |
 			BK4819_REG_30_ENABLE_AF_DAC);
 		BK4819_WriteRegister(BK4819_REG_30, (0xC1FE | BK4819_REG_30_ENABLE_AF_DAC | BK4819_REG_30_ENABLE_RX_DSP) & ~BK4819_REG_30_ENABLE_MIC_ADC);
 	} else
