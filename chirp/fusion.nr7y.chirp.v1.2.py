@@ -745,7 +745,7 @@ _NR7Y_CW_MACRO_SIZE = 48       # Block layout: [0]=len|SIG, [1..46]=payload, [47
 _NR7Y_CW_MACRO_MAX_LEN = 46   # Payload bytes
 _NR7Y_CW_MACRO_SIG = 0x80     # Signature stored in high bit of length byte
 
-# CW key input mode display strings (menu index 0-9 stored directly in EEPROM bits 0-4)
+# CW key input mode display strings (menu index 0-10 stored directly in EEPROM bits 0-4)
 _NR7Y_CW_KEY_INPUT_MODES = [
     "PTT HandKey",           # 0: 0x08
     "Port HandKey",          # 1: 0x18
@@ -757,6 +757,7 @@ _NR7Y_CW_KEY_INPUT_MODES = [
     "Port and Btn Iambic Rev",   # 7: 0x17
     "USB Port Iambic",           # 8: 0x20
     "USB Port Iambic Rev",       # 9: 0x21
+    "USB Port HandKey",          # 10: 0x28
 ]
 
 # CW keyer mode display strings (stored as a full byte 0-3 at _NR7Y_CW_SETTINGS_ADDR+4)
@@ -3870,7 +3871,7 @@ class UVK5_NR7Y_Fusion(UVK5RadioEgzumer):
     # -- Key input mode (bits 0-4 of CW byte 2) --
 
     def _get_cw_key_input_idx(self):
-        """Return key input menu index 0-9."""
+        """Return key input menu index 0-10."""
         b = self._mmap_byte(_NR7Y_CW_SETTINGS_ADDR + 2)
         if b == 0xFF or b >= 0x80:
             return 0   # Default HandKey

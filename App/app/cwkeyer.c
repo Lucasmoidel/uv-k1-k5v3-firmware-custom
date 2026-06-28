@@ -434,16 +434,19 @@ bool CW_CheckKeyerInputs(uint8_t new_mode)
 {    
     // hard deconfig, get all pins in a known state
     CW_KeyerDeinit();
-    
-    // Handkey mode without port ground doesn't need further validation
-    if (new_mode & CW_KEY_FLAG_NO_KEYER && !(new_mode & CW_KEY_FLAG_PORT_GROUND)) {
-        return true;
-    }
-    
+
     // Determine if we need to configure port pins for this mode (use bit flags)
     bool uses_port_ground = (new_mode & CW_KEY_FLAG_PORT_GROUND);
     bool uses_port_ring = (new_mode & CW_KEY_FLAG_PORT_RING);
     bool uses_usb_port  = (new_mode & CW_KEY_FLAG_USB_PORT);
+
+    // Handkey mode without port ground doesn't need further validation.
+    // USB Port Handkey still has real electrical pins to check for stuck keys.
+    if (new_mode & CW_KEY_FLAG_NO_KEYER
+        && !uses_port_ground
+        && !uses_usb_port) {
+        return true;
+    }
 
     // Button-only modes don't need validation (no port pins to check)
     if (!uses_port_ground && !uses_port_ring && !uses_usb_port) {
@@ -491,7 +494,13 @@ bool CW_CheckKeyerInputs(uint8_t new_mode)
     
     for (int i = 0; i < 20; i++) {  // Check up to 20 times = 200ms max
         bool dit = false, dah = false;
-        CW_ReadKeysForMode(new_mode, &dit, &dah);
+        if (uses_usb_port) {
+            // Raw pin read - bypasses CW_ReadKeysForMode's NO_KEYER gating so
+            // USB Port Handkey's pins get checked for stuck keys too.
+            CW_ReadUSBPaddleRaw(&dit, &dah);
+        } else {
+            CW_ReadKeysForMode(new_mode, &dit, &dah);
+        }
 #if CW_KEYER_DEBUG
         total_checks++;
         
@@ -541,9 +550,17 @@ bool CW_CheckKeyerInputs(uint8_t new_mode)
 CW_Action_t ptt_action(void)
 {
     CW_Action_t action = CW_ACTION_NONE;
+    bool ptt;
 
-    // Read PTT button (PC5) via wrapper (active low)
-    bool ptt = GPIO_IsPttPressed();
+    if (gEeprom.CW_KEY_INPUT & CW_KEY_FLAG_USB_PORT) {
+        // USB Port Handkey: either pin acts as a straight key
+        bool tip = false, ring = false;
+        CW_ReadUSBPaddleRaw(&tip, &ring);
+        ptt = tip || ring;
+    } else {
+        // Read PTT button (PC5) via wrapper (active low)
+        ptt = GPIO_IsPttPressed();
+    }
 
     if (ptt && !s_last_handkey_ptt) {
         // PTT pressed

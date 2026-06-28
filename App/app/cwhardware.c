@@ -171,6 +171,13 @@ static void CW_ReadPtt(bool *ptt_out)
     *ptt_out = CW_ReadGpioDeglitched(GPIOB, LL_GPIO_PIN_10, false);
 }
 
+// Raw read of the USB paddle pins, independent of key-input mode flags.
+void CW_ReadUSBPaddleRaw(bool *tip_out, bool *ring_out)
+{
+    *tip_out  = CW_ReadGpioMajority(GPIOA, LL_GPIO_PIN_12, LL_GPIO_PIN_11);
+    *ring_out = CW_ReadGpioMajority(GPIOA, LL_GPIO_PIN_11, LL_GPIO_PIN_12);
+}
+
 // Read raw paddle inputs for a specific mode
 // Returns true if mode is valid, false otherwise
 bool CW_ReadKeysForMode(uint8_t mode, bool *dit_out, bool *dah_out)
@@ -200,8 +207,7 @@ bool CW_ReadKeysForMode(uint8_t mode, bool *dit_out, bool *dah_out)
 
     // USB port mode: PA11 acts as ring/dah (DM), PA12 acts as tip/dit (DP)
     if (mode & CW_KEY_FLAG_USB_PORT) {
-        hw_tip  = CW_ReadGpioMajority(GPIOA, LL_GPIO_PIN_12, LL_GPIO_PIN_11);
-        hw_ring = CW_ReadGpioMajority(GPIOA, LL_GPIO_PIN_11, LL_GPIO_PIN_12);
+        CW_ReadUSBPaddleRaw(&hw_tip, &hw_ring);
     }
 
     // Determine if keys are reversed

@@ -62,9 +62,10 @@ typedef enum POWER_OnDisplayMode_t POWER_OnDisplayMode_t;
 	// "Port+Btn\nIambic\nReversed",
 	// "USB Port\nIambic",
 	// "USB Port\nIambic\nReversed",
+	// "USB Port\nHandKey",
 
-// CW key input selection (0-9) mapped to bitmap value - used for menu and eeprom
-static const uint8_t CW_KEY_INPUT_menu_to_bitmap[10] = {
+// CW key input selection (0-10) mapped to bitmap value - used for menu and eeprom
+static const uint8_t CW_KEY_INPUT_menu_to_bitmap[11] = {
 	0x08, // menu item 0: CW_KEY_FLAG_NO_KEYER - handkey only
 	0x18, // menu item 1: CW_KEY_FLAG_NO_KEYER | CW_KEY_FLAG_PORT_GROUND - handkey + port ground
 	0x04, // menu item 2: CW_KEY_FLAG_SIDE1 - buttons (PTT + SIDE1)
@@ -75,6 +76,7 @@ static const uint8_t CW_KEY_INPUT_menu_to_bitmap[10] = {
 	0x17, // menu item 7: CW_KEY_FLAG_SIDE1 | CW_KEY_FLAG_PORT_RING | CW_KEY_FLAG_PORT_GROUND | CW_KEY_FLAG_REVERSED - buttons + port ring + port ground + reversed
 	0x20, // menu item 8: CW_KEY_FLAG_USB_PORT - USB port (PA11=ring/DM, PA12=tip/DP) iambic
 	0x21, // menu item 9: CW_KEY_FLAG_USB_PORT | CW_KEY_FLAG_REVERSED - USB port iambic reversed
+	0x28, // menu item 10: CW_KEY_FLAG_USB_PORT | CW_KEY_FLAG_NO_KEYER - USB port handkey (either pin)
 };
 
 #define CW_KEY_INPUT_HANDKEY 0x08 // shortcut for the default no-keyer mode (menu item 0)

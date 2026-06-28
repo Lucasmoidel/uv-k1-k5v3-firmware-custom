@@ -39,6 +39,11 @@ typedef struct {
 // Read raw inputs for a specific mode
 bool CW_ReadKeysForMode(uint8_t mode, bool *dit_out, bool *dah_out);
 
+// Raw read of the USB paddle pins (PA12=tip/DP, PA11=ring/DM), independent of
+// key-input mode flags. Used for USB iambic paddle reads and for USB Port
+// Handkey mode (straight key via either pin).
+void CW_ReadUSBPaddleRaw(bool *tip_out, bool *ring_out);
+
 // Read normalized paddle inputs (computes edges)
 void CW_ReadKeys(CW_Input *in);
 
