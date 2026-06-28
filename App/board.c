@@ -129,12 +129,14 @@ void BOARD_GPIO_Init(void)
     LL_GPIO_Init(GPIOF, &InitStruct);
 
 #ifndef ENABLE_SWD
+#ifdef ENABLE_CW_MODULATOR
     // A14:13 13 is used for CW mode ring input - doesn't use 14 though
     InitStruct.Mode = LL_GPIO_MODE_INPUT;
     InitStruct.Pull = LL_GPIO_PULL_NO;
+#endif // ENABLE_CW_MODULATOR
     InitStruct.Pin = LL_GPIO_PIN_14 | LL_GPIO_PIN_13;
     LL_GPIO_Init(GPIOA, &InitStruct);
-#endif // ENABLE_SWD
+    #endif // ENABLE_SWD
 }
 
 void BOARD_ADC_Init(void)

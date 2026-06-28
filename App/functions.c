@@ -266,6 +266,7 @@ void FUNCTION_Transmit_CW()
 
 	// Don't send AF to RF during CW
 	BK4819_EnterTxMute();	
+
 	BK4819_WriteRegister(BK4819_REG_70,
 		BK4819_REG_70_ENABLE_TONE1 |
 		(gEeprom.CW_SIDETONE_LEVEL << BK4819_REG_70_SHIFT_TONE1_TUNING_GAIN));

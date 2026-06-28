@@ -49,19 +49,23 @@ typedef enum POWER_OnDisplayMode_t POWER_OnDisplayMode_t;
 #define CW_KEY_FLAG_SIDE1         0x04  // 0=not side1, 1=use side1 button (plus PTT)
 #define CW_KEY_FLAG_NO_KEYER      0x08  // 0=keyer enabled, 1=handkey only
 #define CW_KEY_FLAG_PORT_GROUND   0x10  // 0=no port ground, 1=use port ground
+#define CW_KEY_FLAG_USB_PORT      0x20  // 0=not USB port, 1=use USB port (PA11/PA12) as paddle
 
 // for reference, from ui/menu.c:
 	// "PTT\nHandKey",
-	// "PTT+TIP\nHandKey",
-	// "PTT dah\nSD1 dit",
-	// "PTT dit\nSD1 dah",
-	// "PTT+TIP\ndah\nRING\ndit",
-	// "PTT+TIP\ndit\nRING\ndah",
-	// "PTT+TIP\ndah\nSD1+RING\ndit",
-	// "PTT+TIP\ndit\nSD1+RING\ndah"
+	// "Port\nHandKey",
+	// "Side Btn\nIambic",
+	// "Side Btn\nIambic\nReversed",
+	// "Port\nIambic",
+	// "Port\nIambic\nReversed",
+	// "Port+Btn\nIambic",
+	// "Port+Btn\nIambic\nReversed",
+	// "USB Port\nIambic",
+	// "USB Port\nIambic\nReversed",
+	// "USB Port\nHandKey",
 
-// CW key input selection (0-9) mapped to bitmap value - used for menu and eeprom
-static const uint8_t CW_KEY_INPUT_menu_to_bitmap[8] = {
+// CW key input selection (0-10) mapped to bitmap value - used for menu and eeprom
+static const uint8_t CW_KEY_INPUT_menu_to_bitmap[11] = {
 	0x08, // menu item 0: CW_KEY_FLAG_NO_KEYER - handkey only
 	0x18, // menu item 1: CW_KEY_FLAG_NO_KEYER | CW_KEY_FLAG_PORT_GROUND - handkey + port ground
 	0x04, // menu item 2: CW_KEY_FLAG_SIDE1 - buttons (PTT + SIDE1)
@@ -70,13 +74,18 @@ static const uint8_t CW_KEY_INPUT_menu_to_bitmap[8] = {
 	0x13, // menu item 5: CW_KEY_FLAG_PORT_RING | CW_KEY_FLAG_PORT_GROUND | CW_KEY_FLAG_REVERSED - port ring + port ground + reversed
 	0x16, // menu item 6: CW_KEY_FLAG_SIDE1 | CW_KEY_FLAG_PORT_RING | CW_KEY_FLAG_PORT_GROUND - buttons + port ring + port ground
 	0x17, // menu item 7: CW_KEY_FLAG_SIDE1 | CW_KEY_FLAG_PORT_RING | CW_KEY_FLAG_PORT_GROUND | CW_KEY_FLAG_REVERSED - buttons + port ring + port ground + reversed
+	0x20, // menu item 8: CW_KEY_FLAG_USB_PORT - USB port (PA11=ring/DM, PA12=tip/DP) iambic
+	0x21, // menu item 9: CW_KEY_FLAG_USB_PORT | CW_KEY_FLAG_REVERSED - USB port iambic reversed
+	0x28, // menu item 10: CW_KEY_FLAG_USB_PORT | CW_KEY_FLAG_NO_KEYER - USB port handkey (either pin)
 };
 
 #define CW_KEY_INPUT_HANDKEY 0x08 // shortcut for the default no-keyer mode (menu item 0)
 
 enum CW_IambicMode_t {
-	CW_IAMBIC_MODE_A = 0,
-	CW_IAMBIC_MODE_B
+	CW_IAMBIC_MODE_A      = 0,
+	CW_IAMBIC_MODE_B      = 1,
+	CW_KEYER_MODE_ULTIMATIC = 2,
+	CW_IAMBIC_MODE_BUG    = 3,
 };
 typedef enum CW_IambicMode_t CW_IambicMode_t;
 
@@ -363,7 +372,7 @@ typedef struct {
 #ifdef ENABLE_CW_MODULATOR
 	uint8_t			  	  CW_TONE_FREQUENCY; 	// Actual frequency in 10s of Hz (e.g. 60 for 600 Hz), stored in eeprom as 50 Hz steps from 450 (0=450, 1=500, ..., 15=1200), default 600
 	uint8_t               CW_SIDETONE_LEVEL;	// CW sidetone level: 0=off, 1-6 scaled volume levels
-	CW_IambicMode_t       CW_KEYER_MODE;		// Iambic A or B (keyer disabled when CW_KEY_INPUT == HANDKEY)
+	CW_IambicMode_t       CW_KEYER_MODE;		// Iambic A, Iambic B, Ultimatic, or Bug/SAB (keyer disabled when CW_KEY_INPUT == HANDKEY)
 	uint8_t               CW_KEY_WPM;			// actual WPM
 	uint8_t               CW_KEY_INPUT;			// Bitmapped button/port input selections for CW keyer
 	uint16_t			  CW_KEY_INPUT_MENU;	// index of the chosen input method in the menu

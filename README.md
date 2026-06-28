@@ -1,11 +1,18 @@
 # NR7Y CW mod for F4HWN Fusion
 
+## 📦 [**Download prebuilt firmware to flash → Releases**](https://github.com/briand/uv-k5-firmware-custom-cw/releases)
+Pre-built `.uf2`/`.bin` files ready to flash are published every release, you don't need to compile them.
+
+## 📖 [**Documentation site →**](https://github.com/briand/cw-firmware-docs)
+Full menu reference, rework guides now live here.
+
 This repository builds on the F4HWN codebase by adding a set of features specifically for CW operators.
 
 - High-speed RX/TX switching for realtime Morse code sending in true CW modulation
-- Automatic iambic keyer with A/B modes
+- Automatic iambic keyer with A/B/Ultimatic/Bug modes
 - Internal paddle support with PTT/Side1 buttons
 - External paddle support with rework - allows direct connection of a standard paddle with no cable change
+- External paddle support with no rework through a custom USB cable
 - Macro message recording by keying and playback
 - Code Practice mode with optional flashlight LED sending
 
@@ -13,9 +20,6 @@ This repository builds on the F4HWN codebase by adding a set of features specifi
 > This firmware mod, perhaps more than some, changes the radio hardware behavior in significant ways. While every attempt is made to do this in a way that allows the hardware to operate properly and within spec for Amateur Radio service, no guarantee or warranty is given to any effect of proper performance nor against damage to the radio hardware itself. Use at your own risk.
 
 This firmware only supports the UVK5v3 or UVK1 Quansheng hardware. It does not work with the original UVK5 model; use the V1 mod firmware [here](https://github.com/briand/uv-k5-firmware-custom-cw) instead for v1 radios.
-
-> [!IMPORTANT]
-> See [the firmware readme](NR7Y_FIRMWARE_README.md) for additional details about the new menu options and functionality in the mod.
 
 This code is available under the Apache 2.0 License as is the work of giants that it builds upon.
 

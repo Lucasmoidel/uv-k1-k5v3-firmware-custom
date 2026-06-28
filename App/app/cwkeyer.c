@@ -65,6 +65,19 @@ typedef enum {
 
 static CW_KeyerFSMState_t s_KeyerFSMState = CWK_STATE_IDLE;
 
+// Bug (semi-automatic) keyer FSM states
+typedef enum {
+    BUG_STATE_IDLE = 0,
+    BUG_STATE_DIT_ELEMENT,  // carrier on, timing dit duration
+    BUG_STATE_DIT_GAP,      // carrier off, inter-element gap (only while dit held)
+    BUG_STATE_DAH_HOLD,     // carrier on, operator-held dah
+    BUG_STATE_CHAR_GAP,     // carrier off, timing inter-char gap (mirrors CWK_STATE_INTER_CHAR_GAP)
+    BUG_STATE_WORD_GAP,     // carrier off, timing inter-word gap (mirrors CWK_STATE_INTER_WORD_GAP)
+} CW_BugFSMState_t;
+
+static CW_BugFSMState_t s_bug_state       = BUG_STATE_IDLE;
+static uint32_t         s_bug_phase_start = 0;
+
 // Internal keyer runtime state
 static uint16_t       s_dit_count  = 0;      // duration in timer ticks (16-bit)
 static uint16_t       s_dah_count  = 0;      // duration in timer ticks (16-bit)
@@ -123,6 +136,8 @@ void CW_KeyerResetRuntime(void)
     s_active_is_dit = false;
     s_pending_alternate = false;
     s_last_handkey_ptt = false;
+    s_bug_state = BUG_STATE_IDLE;
+    s_bug_phase_start = 0;
 
     // clear any stale edge memory
     CW_HW_ResetKeySamples();
@@ -134,6 +149,7 @@ static void CW_KeyerDeinit()
     CW_KeyerResetRuntime();
 
     CW_ConfigurePortRing(false); // make sure PB15 is an input with no pullup, to avoid affecting the line if shorted to mic (keyer rework)
+    CW_ConfigureUsbPaddlePins(false); // restore PA11/PA12 to USB AF if USB paddle mode was active
 
     gCW_KeyerManagesPtt = false;
     gCW_KeyerUsingSD1 = false;
@@ -205,10 +221,12 @@ static void CW_KeyerInit()
 
     bool uses_port_ground = (key_input_mode & CW_KEY_FLAG_PORT_GROUND) != 0;
     bool uses_port_ring   = (key_input_mode & CW_KEY_FLAG_PORT_RING) != 0;
+    bool uses_usb_port    = (key_input_mode & CW_KEY_FLAG_USB_PORT) != 0;
 
     CW_ConfigurePortRing(uses_port_ring);
     if (uses_port_ground)
         CW_ConfigurePortGround(true);
+    CW_ConfigureUsbPaddlePins(uses_usb_port);
 
     gCW_KeyerUsingSD1 = (key_input_mode & CW_KEY_FLAG_SIDE1) != 0;
     s_last_key_input_mode = key_input_mode;
@@ -416,18 +434,22 @@ bool CW_CheckKeyerInputs(uint8_t new_mode)
 {    
     // hard deconfig, get all pins in a known state
     CW_KeyerDeinit();
-    
-    // Handkey mode without port ground doesn't need further validation
-    if (new_mode & CW_KEY_FLAG_NO_KEYER && !(new_mode & CW_KEY_FLAG_PORT_GROUND)) {
-        return true;
-    }
-    
+
     // Determine if we need to configure port pins for this mode (use bit flags)
     bool uses_port_ground = (new_mode & CW_KEY_FLAG_PORT_GROUND);
     bool uses_port_ring = (new_mode & CW_KEY_FLAG_PORT_RING);
+    bool uses_usb_port  = (new_mode & CW_KEY_FLAG_USB_PORT);
+
+    // Handkey mode without port ground doesn't need further validation.
+    // USB Port Handkey still has real electrical pins to check for stuck keys.
+    if (new_mode & CW_KEY_FLAG_NO_KEYER
+        && !uses_port_ground
+        && !uses_usb_port) {
+        return true;
+    }
 
     // Button-only modes don't need validation (no port pins to check)
-    if (!uses_port_ground && !uses_port_ring) {
+    if (!uses_port_ground && !uses_port_ring && !uses_usb_port) {
         return true;
     }
     
@@ -449,6 +471,12 @@ bool CW_CheckKeyerInputs(uint8_t new_mode)
 #endif
         CW_ConfigurePortRing(uses_port_ring);
     }
+    if (uses_usb_port) {
+#if CW_KEYER_DEBUG
+        UART_Send("Configuring USB paddle pins for CW keyer check\r\n", 49);
+#endif
+        CW_ConfigureUsbPaddlePins(true);
+    }
 
     // Allow pins to stabilize after configuration
     SYSTEM_DelayMs(50);
@@ -466,7 +494,13 @@ bool CW_CheckKeyerInputs(uint8_t new_mode)
     
     for (int i = 0; i < 20; i++) {  // Check up to 20 times = 200ms max
         bool dit = false, dah = false;
-        CW_ReadKeysForMode(new_mode, &dit, &dah);
+        if (uses_usb_port) {
+            // Raw pin read - bypasses CW_ReadKeysForMode's NO_KEYER gating so
+            // USB Port Handkey's pins get checked for stuck keys too.
+            CW_ReadUSBPaddleRaw(&dit, &dah);
+        } else {
+            CW_ReadKeysForMode(new_mode, &dit, &dah);
+        }
 #if CW_KEYER_DEBUG
         total_checks++;
         
@@ -516,9 +550,17 @@ bool CW_CheckKeyerInputs(uint8_t new_mode)
 CW_Action_t ptt_action(void)
 {
     CW_Action_t action = CW_ACTION_NONE;
+    bool ptt;
 
-    // Read PTT button (PC5) via wrapper (active low)
-    bool ptt = GPIO_IsPttPressed();
+    if (gEeprom.CW_KEY_INPUT & CW_KEY_FLAG_USB_PORT) {
+        // USB Port Handkey: either pin acts as a straight key
+        bool tip = false, ring = false;
+        CW_ReadUSBPaddleRaw(&tip, &ring);
+        ptt = tip || ring;
+    } else {
+        // Read PTT button (PC5) via wrapper (active low)
+        ptt = GPIO_IsPttPressed();
+    }
 
     if (ptt && !s_last_handkey_ptt) {
         // PTT pressed
@@ -541,6 +583,116 @@ CW_Action_t ptt_action(void)
     return action;
 }
 
+// Semi-automatic bug keyer FSM.  Dah is a raw handkey; dit auto-repeats at WPM timing.
+// Dah takes priority immediately; releasing either key stops it with no trailing gap or element.
+static CW_Action_t CW_HandleBugState(void)
+{
+    CW_Input in = {0};
+    CW_ReadKeys(&in);
+    const uint32_t now = millis();
+
+    switch (s_bug_state) {
+    case BUG_STATE_IDLE:
+        if (in.dah) {
+            s_bug_state = BUG_STATE_DAH_HOLD;
+            return CW_ACTION_CARRIER_ON;
+        }
+        if (in.dit) {
+            s_bug_phase_start = now;
+            s_elem_deadline_extra_ms = AUDIO_IsAudioPathOn() ? 0 : 20;
+            s_bug_state = BUG_STATE_DIT_ELEMENT;
+            return CW_ACTION_CARRIER_ON;
+        }
+        return CW_ACTION_NONE;
+
+    case BUG_STATE_DIT_ELEMENT:
+        if (millis_since(s_bug_phase_start) >= (uint32_t)(s_dit_count + s_elem_deadline_extra_ms)) {
+            // Element complete — always finish the full dit before stopping
+            CW_EncoderProcessElement(CW_ELEMENT_DIT);
+            s_elem_deadline_extra_ms = 0;
+            s_bug_phase_start = now;
+            // Gap and repeat only if dit is still held at completion; else start the char gap
+            //s_bug_state = in.dit ? BUG_STATE_DIT_GAP : BUG_STATE_CHAR_GAP;
+            s_bug_state = BUG_STATE_DIT_GAP;
+            return CW_ACTION_CARRIER_OFF;
+        }
+        return CW_ACTION_CARRIER_HOLD_ON;
+
+    case BUG_STATE_DIT_GAP:
+        if (in.dah) {
+            s_bug_phase_start = now;
+            s_bug_state = BUG_STATE_DAH_HOLD;
+            return CW_ACTION_CARRIER_ON;
+        }
+        if (!in.dit) {
+            // Released during gap — no next element, start the char gap
+            s_bug_phase_start = now;
+            s_bug_state = BUG_STATE_CHAR_GAP;
+            return CW_ACTION_NONE;
+        }
+        if (millis_since(s_bug_phase_start) >= (uint32_t)s_gap_count) {
+            s_bug_phase_start = now;
+            s_bug_state = BUG_STATE_DIT_ELEMENT;
+            return CW_ACTION_CARRIER_ON;
+        }
+        return CW_ACTION_NONE;
+
+    case BUG_STATE_DAH_HOLD:
+        if (in.dah) {
+            return CW_ACTION_CARRIER_HOLD_ON;
+        }
+
+        if(millis_since(s_bug_phase_start) >= (uint32_t)s_gap_count) {
+            // only encode the non-glitchy elements
+            CW_EncoderProcessElement(CW_ELEMENT_DAH);
+        }
+
+        s_bug_phase_start = now;
+        //s_bug_state = BUG_STATE_CHAR_GAP;
+        s_bug_state = BUG_STATE_DIT_GAP; // make an element gap
+        return CW_ACTION_CARRIER_OFF;
+
+    case BUG_STATE_CHAR_GAP:
+        if (in.dah) {
+            s_bug_phase_start = now;
+            s_bug_state = BUG_STATE_DAH_HOLD;
+            return CW_ACTION_CARRIER_ON;
+        }
+        if (in.dit) {
+            s_bug_phase_start = now;
+            s_bug_state = BUG_STATE_DIT_ELEMENT;
+            return CW_ACTION_CARRIER_ON;
+        }
+        if (millis_since(s_bug_phase_start) >= (uint32_t)s_char_gap_count) {
+            // Char gap complete — character boundary reached. Carry over the
+            // gap timer (mirrors CWK_STATE_INTER_CHAR_GAP -> CWK_STATE_INTER_WORD_GAP).
+            CW_EncoderProcessElement(CW_ELEMENT_INTER_CHAR_SPACE);
+            s_bug_state = BUG_STATE_WORD_GAP;
+        }
+        return CW_ACTION_NONE;
+
+    case BUG_STATE_WORD_GAP:
+        if (in.dah) {
+            s_bug_phase_start = now;
+            s_bug_state = BUG_STATE_DAH_HOLD;
+            return CW_ACTION_CARRIER_ON;
+        }
+        if (in.dit) {
+            s_bug_phase_start = now;
+            s_bug_state = BUG_STATE_DIT_ELEMENT;
+            return CW_ACTION_CARRIER_ON;
+        }
+        if (millis_since(s_bug_phase_start) >= (uint32_t)s_word_gap_count) {
+            // Word gap complete
+            CW_EncoderProcessElement(CW_ELEMENT_INTER_WORD_SPACE);
+            s_bug_state = BUG_STATE_IDLE;
+        }
+        return CW_ACTION_NONE;
+    }
+
+    return CW_ACTION_NONE;
+}
+
 // Manage CW sending - called via main->CW_AppUpdate() every 1 ms.
 // Uses millis() to manage deadlines for element duration and spacing.
 CW_Action_t CW_HandleState(void)
@@ -549,7 +701,7 @@ CW_Action_t CW_HandleState(void)
     CW_Action_t action = CW_ACTION_NONE;
 
     // Apply pending init if needed.
-    if (s_cfg_dirty && s_KeyerFSMState == CWK_STATE_IDLE) {
+    if (s_cfg_dirty && s_KeyerFSMState == CWK_STATE_IDLE && s_bug_state == BUG_STATE_IDLE) {
         // Defer applying configuration while we're inside a potential word gap
         // so we don't reset timing before an inter-word space can be detected.
 #if CW_KEYER_DEBUG
@@ -575,6 +727,11 @@ CW_Action_t CW_HandleState(void)
         return ptt_action();
     }
 
+    // Semi-automatic bug keyer runs its own FSM
+    if (gEeprom.CW_KEYER_MODE == CW_IAMBIC_MODE_BUG) {
+        return CW_HandleBugState();
+    }
+
     // Input struct - will be sampled at appropriate times in each state
     CW_Input in = {0};
 
@@ -596,12 +753,13 @@ CW_Action_t CW_HandleState(void)
             UART_Send("keyer is idle\r\n", 15);
 #endif
         if (in.dit || in.dah) {
-            // Explicit handling when both paddles are pressed:
-            // If both pressed and previous element was a dit, choose dah; otherwise choose dit.
             if (in.dit && !in.dah) {
                 s_active_is_dit = true;
             } else if (in.dah && !in.dit) {
                 s_active_is_dit = false;
+            } else if (gEeprom.CW_KEYER_MODE == CW_KEYER_MODE_ULTIMATIC) {
+                // both pressed -> send whichever paddle was pressed last
+                s_active_is_dit = !in.last_is_dah;
             } else {
                 // both pressed -> toggle previous element type (dit->dah, dah->dit)
                 s_active_is_dit = !s_active_is_dit;
@@ -636,12 +794,15 @@ CW_Action_t CW_HandleState(void)
             }
         }
 #endif
-        // Sample paddles for memory logic - skip if we already know alternate is pending
+        // Sample paddles for memory logic - skip if we already know alternate is pending.
+        // Ultimatic never sets s_pending_alternate here, so it always reads (decisions
+        // are made fresh at the next gap, not queued via memory).
         if(!s_pending_alternate)
         {
             CW_ReadKeys(&in);
-        
-            // Memory logic: depends on keyer mode and element type
+
+            // Memory logic: depends on keyer mode and element type. Ultimatic has no
+            // memory queueing at all - it falls through after the read above.
             if (gEeprom.CW_KEYER_MODE == CW_IAMBIC_MODE_A) {
                 // Type A: Purely edge detection for opposite paddle throughout element
                 if (s_active_is_dit && in.dah_rise) {
@@ -649,7 +810,7 @@ CW_Action_t CW_HandleState(void)
                 } else if (!s_active_is_dit && in.dit_rise) {
                     s_pending_alternate = true;
                 }
-            } else {
+            } else if (gEeprom.CW_KEYER_MODE == CW_IAMBIC_MODE_B) {
                 // "Elecraft style" Type B with an edge-trigger during the first third of a dah
                 // (so holding the alternate on the way into the element won't trigger it)
                 if ((!s_active_is_dit) && (elapsed_elem < s_dit_count)) {
@@ -698,22 +859,17 @@ CW_Action_t CW_HandleState(void)
         {
             // keep doing sampling during gap for memory logic
             CW_ReadKeys(&in);
-        
-            // Mode A style Edge detection for opposite key throughout element AND gap, but for both modes
-            if (s_active_is_dit && in.dah_rise) {
-                s_pending_alternate = true;
-            } else if (!s_active_is_dit && in.dit_rise) {
-                s_pending_alternate = true;
+
+            // Mode A style Edge detection for opposite key throughout element AND gap, but for
+            // both iambic modes. Ultimatic doesn't queue an alternate here - its next element
+            // is decided fresh below, every time, from current paddle state.
+            if (gEeprom.CW_KEYER_MODE != CW_KEYER_MODE_ULTIMATIC) {
+                if (s_active_is_dit && in.dah_rise) {
+                    s_pending_alternate = true;
+                } else if (!s_active_is_dit && in.dit_rise) {
+                    s_pending_alternate = true;
+                }
             }
-            // I think we don't want B reading during gap? this was probably the double-dit problem.
-            // else {
-            //     // Standard Type B logic: state detection
-            //     if (s_active_is_dit && in.dah) {
-            //         s_pending_alternate = true;
-            //     } else if (!s_active_is_dit && in.dit) {
-            //         s_pending_alternate = true;
-            //     }
-            // }
         }
         if (elapsed_gap >= s_gap_count) {
 
@@ -740,6 +896,9 @@ CW_Action_t CW_HandleState(void)
                         next_is_dit = true;
                     } else if (in.dah && !in.dit) {
                         next_is_dit = false;
+                    } else if (gEeprom.CW_KEYER_MODE == CW_KEYER_MODE_ULTIMATIC) {
+                        // both pressed -> send whichever paddle was pressed last
+                        next_is_dit = !in.last_is_dah;
                     } else { /* both pressed -> choose opposite of previous */
                         next_is_dit = !s_active_is_dit;
                     }
@@ -783,6 +942,9 @@ CW_Action_t CW_HandleState(void)
                         s_active_is_dit = true;
                     } else if (in.dah && !in.dit) {
                         s_active_is_dit = false;
+                    } else if (gEeprom.CW_KEYER_MODE == CW_KEYER_MODE_ULTIMATIC) {
+                        // both pressed -> send whichever paddle was pressed last
+                        s_active_is_dit = !in.last_is_dah;
                     } else { // both pressed -> toggle previous
                         s_active_is_dit = !s_active_is_dit;
                     }
@@ -795,7 +957,12 @@ CW_Action_t CW_HandleState(void)
 			    // Hold period (ext_gap <= elapsed < char_gap): queue key but wait for char_gap deadline
 			    if (have_key && !s_pending_alternate) {
 				    s_pending_alternate = true;
-				    s_active_is_dit = in.dit;
+				    if (gEeprom.CW_KEYER_MODE == CW_KEYER_MODE_ULTIMATIC && in.dit && in.dah) {
+				        // both pressed -> send whichever paddle was pressed last
+				        s_active_is_dit = !in.last_is_dah;
+				    } else {
+				        s_active_is_dit = in.dit;
+				    }
 			    }
             }
 
@@ -840,7 +1007,12 @@ CW_Action_t CW_HandleState(void)
         CW_ReadKeys(&in);
 		
         if (in.dit || in.dah) {
-            s_active_is_dit = in.dit;
+            if (gEeprom.CW_KEYER_MODE == CW_KEYER_MODE_ULTIMATIC && in.dit && in.dah) {
+                // both pressed -> send whichever paddle was pressed last
+                s_active_is_dit = !in.last_is_dah;
+            } else {
+                s_active_is_dit = in.dit;
+            }
 			s_elem_start_count = cur_count;
 			s_KeyerFSMState = CWK_STATE_ACTIVE_ELEMENT;
 			action = CW_ACTION_CARRIER_ON;

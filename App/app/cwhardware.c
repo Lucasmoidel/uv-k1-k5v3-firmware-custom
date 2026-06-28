@@ -34,6 +34,9 @@
 #include "driver/uart.h"
 #include "driver/adc.h"
 #include "driver/millis.h"
+#ifdef ENABLE_USB
+#include "driver/vcp.h"
+#endif
 #include "external/printf/printf.h"
 
 // Local debug toggle for CW hardware reads
@@ -41,13 +44,12 @@
 #define ENABLE_CW_HARDWARE_DEBUG 0
 #endif
 
-#define ENABLE_CEC_KEYER_DEBUG 0
-
 // Local state for last sampled paddles (edge detection)
 static bool     s_last_dit   = false;
 static bool     s_last_dah   = false;
 static uint32_t s_dit_count  = 0;  // consecutive raw-true reads for dit
 static uint32_t s_dah_count  = 0;  // consecutive raw-true reads for dah
+static bool     s_last_is_dah = false;  // which paddle was pressed most recently (for Ultimatic mode)
 
 // Read button ring input (SIDE1)
 static void CW_ReadSideButton(bool *ring_out)
@@ -106,8 +108,8 @@ static void CW_ReadSideButton(bool *ring_out)
 }
 
 
-// Generic GPIO deglitch function - reads with de-noise
-// Returns true if pin is active (low), false if inactive (high)
+// Generic GPIO deglitch function - reads with de-noise using consecutive-sample algorithm.
+// Returns true if pin is active (low), false if inactive (high).
 static bool CW_ReadGpioDeglitched(GPIO_TypeDef *gpio_port, uint32_t pin_mask, bool heavy)
 {
     bool result = false;
@@ -128,34 +130,53 @@ static bool CW_ReadGpioDeglitched(GPIO_TypeDef *gpio_port, uint32_t pin_mask, bo
         // Stable reading achieved - active low
         result = !reg;
     }
-
+#if ENABLE_CW_HARDWARE_DEBUG
+    char dbg_buf[80];
+        sprintf_(dbg_buf, "s=%u r=0x%08X m=%u r=%u\r\n", (unsigned)(i>=goal), (unsigned)reg, (unsigned)i, (unsigned)result);
+        UART_Send(dbg_buf, strlen(dbg_buf));
+#endif
     return result;
+}
+
+// 64 samples at 48 MHz ≈ 3 µs total, negligible overhead.
+// Threshold 40/64 (62.5%) leaves headroom for up to 24 noise samples per burst.
+#define MV_SAMPLES   100U
+#define MV_THRESHOLD 65U   // ≥65 LOW samples (of 80) = pin is pressed
+    
+static bool CW_ReadGpioMajority(GPIO_TypeDef *gpio_port, uint32_t pin_mask, uint32_t other_pin_mask)
+{
+    // opposing pin as output low
+    LL_GPIO_SetPinPull(GPIOA, other_pin_mask, LL_GPIO_PULL_DOWN);
+    LL_GPIO_SetPinMode(GPIOA, other_pin_mask, LL_GPIO_MODE_OUTPUT);
+    LL_GPIO_ResetOutputPin(GPIOA, other_pin_mask);
+
+    // sample target pin as pu high input 
+    LL_GPIO_SetPinMode(GPIOA, pin_mask, LL_GPIO_MODE_INPUT);
+    LL_GPIO_SetPinPull(GPIOA, pin_mask, LL_GPIO_PULL_UP);
+
+    SYSTICK_DelayUs(5); // let the line settle after changing state
+
+    uint32_t low_count = 0;
+    for (uint32_t k = 0; k < MV_SAMPLES; k++) {
+        if (!LL_GPIO_IsInputPinSet(gpio_port, pin_mask))
+            low_count++;
+    }
+    
+    return (low_count >= MV_THRESHOLD);
 }
 
 // Read the PTT/tip with de-noise
 static void CW_ReadPtt(bool *ptt_out)
 {
-    // TODO: add back the de-glitch routine
-    //*ptt_out = GPIO_IsPttPressed();
     *ptt_out = CW_ReadGpioDeglitched(GPIOB, LL_GPIO_PIN_10, false);
-
 }
 
-// static uint16_t ReadCH3()
-// {
-//     // OLD SINGLE SAMPLE CODE (keep for reference):
-//     // Trigger ADC conversion
-//     (*(volatile uint32_t *)0x400BA004U) = 0x1U;  // SARADC_START
-    
-//     // Wait for CH3 end of conversion (0x400BA028 = CH0 + 3*sizeof(ADC_Channel_t))
-//     while (!(*(volatile uint32_t *)0x400BA028U & 0x1)) {}
-    
-//     // Clear interrupt flag for CH3
-//     (*(volatile uint32_t *)0x400BA00CU) = (1U << 3);
-    
-//     // 12-bit data (0x400BA02C = CH3 DATA register)
-//     return (uint16_t)((*(volatile uint32_t *)0x400BA02CU) & 0xFFFU);
-// }
+// Raw read of the USB paddle pins, independent of key-input mode flags.
+void CW_ReadUSBPaddleRaw(bool *tip_out, bool *ring_out)
+{
+    *tip_out  = CW_ReadGpioMajority(GPIOA, LL_GPIO_PIN_12, LL_GPIO_PIN_11);
+    *ring_out = CW_ReadGpioMajority(GPIOA, LL_GPIO_PIN_11, LL_GPIO_PIN_12);
+}
 
 // Read raw paddle inputs for a specific mode
 // Returns true if mode is valid, false otherwise
@@ -173,7 +194,7 @@ bool CW_ReadKeysForMode(uint8_t mode, bool *dit_out, bool *dah_out)
 
     // Read button ring input if enabled
     if (mode & CW_KEY_FLAG_SIDE1) {
-        CW_ReadSideButton(&hw_ring);
+        CW_ReadSideButton(&hw_tip);
     }
     
     // Read port ring input if enabled and OR with button ring.
@@ -181,9 +202,14 @@ bool CW_ReadKeysForMode(uint8_t mode, bool *dit_out, bool *dah_out)
     // the OR result is the same and we avoid ~500us of sampling overhead on every poll.
     if ((mode & CW_KEY_FLAG_PORT_RING) && !hw_ring) {
         // New hardware: port-ring is on PA13 (SWDIO when not used). Use deglitch helper on GPIOA bit 13.
-        hw_ring = CW_ReadGpioDeglitched(GPIOA, LL_GPIO_PIN_13, true);
+        hw_ring = CW_ReadGpioDeglitched(GPIOA, LL_GPIO_PIN_13, false);
     }
-    
+
+    // USB port mode: PA11 acts as ring/dah (DM), PA12 acts as tip/dit (DP)
+    if (mode & CW_KEY_FLAG_USB_PORT) {
+        CW_ReadUSBPaddleRaw(&hw_tip, &hw_ring);
+    }
+
     // Determine if keys are reversed
     bool reverse = (mode & CW_KEY_FLAG_REVERSED);
 
@@ -221,6 +247,12 @@ void CW_ReadKeys(CW_Input *in)
     in->dit = deb_dit;
     in->dah = deb_dah;
 
+    // Track which paddle was pressed most recently (a fresh press is exactly
+    // a rising edge), for Ultimatic mode's "both held -> last one wins" rule.
+    if (in->dit_rise) s_last_is_dah = false;
+    else if (in->dah_rise) s_last_is_dah = true;
+    in->last_is_dah = s_last_is_dah;
+
     s_last_dit = deb_dit;
     s_last_dah = deb_dah;
 }
@@ -255,6 +287,48 @@ void CW_ConfigurePortGround(bool enable)
 #endif
 }
 
+// Configure USB port paddle pins (PA11 = DM, PA12 = DP).
+// When enabling: both become GPIO inputs with pull-ups (active-low paddle convention).
+// When disabling: restore to alternate-function mode for USB (AF10 on PY32F071).
+// Note: The USB CDC stack continues running in the background; only the pin mux changes.
+void CW_ConfigureUsbPaddlePins(bool enable)
+{
+    LL_IOP_GRP1_EnableClock(LL_IOP_GRP1_PERIPH_GPIOA);
+    if (enable) {
+        // Assert USB reset then gate the APB1 clock so the PHY stops driving PA11/PA12.
+        SET_BIT(USBD->CR, USBD_CR_Reset);
+        LL_APB1_GRP1_DisableClock(LL_APB1_GRP1_PERIPH_USBD);
+
+        // Disable the SYSCFG analog filter for PA11 and PA12 (PA_ENS bits).
+        SET_BIT(SYSCFG->PAENS, LL_GPIO_PIN_11 | LL_GPIO_PIN_12);
+
+        // Set the paddle pins as output low to start off - we'll change to input for sampling
+        LL_GPIO_InitTypeDef init = {0};
+        init.Pin        = LL_GPIO_PIN_12 | LL_GPIO_PIN_11;
+        init.Mode       = LL_GPIO_MODE_OUTPUT;
+        init.Pull       = LL_GPIO_PULL_NO;
+        init.Speed      = LL_GPIO_SPEED_FREQ_VERY_HIGH;
+        LL_GPIO_Init(GPIOA, &init);
+
+    } else {
+        // Restore PA11 and PA12 to USB alternate function.
+        // On PY32F071 the USB DM/DP function is AF10.
+        LL_GPIO_InitTypeDef init = {0};
+        init.Pin        = LL_GPIO_PIN_11 | LL_GPIO_PIN_12;
+        init.Mode       = LL_GPIO_MODE_ALTERNATE;
+        init.Alternate  = LL_GPIO_AF_10;
+        init.Pull       = LL_GPIO_PULL_NO;
+        init.Speed      = LL_GPIO_SPEED_FREQ_VERY_HIGH;
+        LL_GPIO_Init(GPIOA, &init);
+
+        // Clear USB reset and re-enable the APB1 clock to restore USB functionality.
+        // Thse *should* be safe to do again if they were already correct
+        CLEAR_BIT(USBD->CR, USBD_CR_Reset);
+        LL_APB1_GRP1_EnableClock(LL_APB1_GRP1_PERIPH_USBD);
+
+    }
+}
+
 // FM Radio is disabled on this firmware, we *always* configure
 // PB15 as an input, because the radio might have the line reworked
 // onto the mic input, and we don't want to affect that.
@@ -283,8 +357,9 @@ void CW_ConfigurePortRing(bool enable)
 // Reset sampled key states (used from keyer init)
 void CW_HW_ResetKeySamples(void)
 {
-    s_last_dit = false;
-    s_last_dah = false;
+    s_last_dit   = false;
+    s_last_dah   = false;
+    s_last_is_dah = false;
 }
 
 
