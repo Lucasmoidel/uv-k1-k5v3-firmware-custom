@@ -624,12 +624,12 @@ static CW_Action_t CW_HandleBugState(void)
             s_bug_state = BUG_STATE_DAH_HOLD;
             return CW_ACTION_CARRIER_ON;
         }
-        if (!in.dit) {
-            // Released during gap — no next element, start the char gap
-            s_bug_phase_start = now;
-            s_bug_state = BUG_STATE_CHAR_GAP;
-            return CW_ACTION_NONE;
-        }
+        // if (!in.dit) {
+        //     // Released during gap — no next element, start the char gap
+        //     s_bug_phase_start = now;
+        //     s_bug_state = BUG_STATE_CHAR_GAP;
+        //     return CW_ACTION_NONE;
+        // }
         if (millis_since(s_bug_phase_start) >= (uint32_t)s_gap_count) {
             s_bug_phase_start = now;
             s_bug_state = BUG_STATE_DIT_ELEMENT;
