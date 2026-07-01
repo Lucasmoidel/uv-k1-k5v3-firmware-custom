@@ -31,6 +31,7 @@ The CPO mode provides local practice: no RX or TX, sidetone only, on-screen deco
 - Use the Up/Down keys to adjust WPM, which will save on exit
 - Tap **'*'** to keep the backlight on/off
 - Tap **4** to enable/disable flashlight sending
+- Tap **5** to clear the decoded text
 
 ## CW Menu Options
 
