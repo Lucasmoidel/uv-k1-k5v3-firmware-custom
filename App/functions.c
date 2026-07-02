@@ -132,6 +132,11 @@ void FUNCTION_PowerSave() {
 
     gMonitor = false;
 
+#ifdef ENABLE_CW_MODULATOR
+    AUDIO_AudioPathOff();
+    gEnableSpeaker = false;
+#endif
+
     BK4819_DisableVox();
     BK4819_Sleep();
 
