@@ -1105,8 +1105,7 @@ void MENU_AcceptSetting(void)
 			break;
 
 		case MENU_CW_SIDETONE_LEVEL:
-			// Convert menu value (0-6) to scaled value (0-126)
-			gEeprom.CW_SIDETONE_LEVEL = gSubMenuSelection * 21;
+			gEeprom.CW_SIDETONE_LEVEL = gSubMenuSelection;
 			break;
 
 		case MENU_CW_KEYER_MODE:
@@ -1662,8 +1661,7 @@ void MENU_ShowCurrentSetting(void)
 			gSubMenuSelection = (gEeprom.CW_TONE_FREQUENCY - 45) / 5;
 			break;
 		case MENU_CW_SIDETONE_LEVEL:
-			// Convert scaled value (0, 21, 42, 63, 84, 105, 126) back to menu value (0-6)
-			gSubMenuSelection = gEeprom.CW_SIDETONE_LEVEL / 21;
+			gSubMenuSelection = gEeprom.CW_SIDETONE_LEVEL;
 			break;
 		case MENU_CW_KEYER_MODE:
 			gSubMenuSelection = gEeprom.CW_KEYER_MODE;

@@ -21,6 +21,7 @@
     #include "app/fm.h"
 #endif
 #ifdef ENABLE_CW_MODULATOR
+	#include "app/cwkeyer.h"
 	#include "app/cwmacro.h"
 #endif
 #include "audio.h"
@@ -267,9 +268,7 @@ void FUNCTION_Transmit_CW()
 	// Don't send AF to RF during CW
 	BK4819_EnterTxMute();	
 
-	BK4819_WriteRegister(BK4819_REG_70,
-		BK4819_REG_70_ENABLE_TONE1 |
-		(gEeprom.CW_SIDETONE_LEVEL << BK4819_REG_70_SHIFT_TONE1_TUNING_GAIN));
+	BK4819_WriteRegister(BK4819_REG_70, BK4819_REG_70_TONE1_VALUE(CW_SidetoneLevelToGain(gEeprom.CW_SIDETONE_LEVEL)));
 	BK4819_SetAF(BK4819_AF_ALAM);
 
 	gEnableSpeaker = true;

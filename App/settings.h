@@ -371,7 +371,7 @@ typedef struct {
 #endif
 #ifdef ENABLE_CW_MODULATOR
 	uint8_t			  	  CW_TONE_FREQUENCY; 	// Actual frequency in 10s of Hz (e.g. 60 for 600 Hz), stored in eeprom as 50 Hz steps from 450 (0=450, 1=500, ..., 15=1200), default 600
-	uint8_t               CW_SIDETONE_LEVEL;	// CW sidetone level: 0=off, 1-6 scaled volume levels
+	uint8_t               CW_SIDETONE_LEVEL;	// CW sidetone level: raw menu index 0=off, 1-6 = volume level (see CW_SidetoneLevelToGain for the actual BK4819 gain curve)
 	CW_IambicMode_t       CW_KEYER_MODE;		// Iambic A, Iambic B, Ultimatic, or Bug/SAB (keyer disabled when CW_KEY_INPUT == HANDKEY)
 	uint8_t               CW_KEY_WPM;			// actual WPM
 	uint8_t               CW_KEY_INPUT;			// Bitmapped button/port input selections for CW keyer

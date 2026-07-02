@@ -192,9 +192,11 @@ bool CW_ReadKeysForMode(uint8_t mode, bool *dit_out, bool *dah_out)
     bool hw_tip = false;
     CW_ReadPtt(&hw_tip);
 
-    // Read button ring input if enabled
+    // Read button ring input if enabled and OR with PTT (SIDE1 is "side1 button plus PTT")
     if (mode & CW_KEY_FLAG_SIDE1) {
-        CW_ReadSideButton(&hw_tip);
+        bool hw_side1 = false;
+        CW_ReadSideButton(&hw_side1);
+        hw_tip |= hw_side1;
     }
     
     // Read port ring input if enabled and OR with button ring.
