@@ -37,6 +37,10 @@ CW_Action_t CW_HandleState(void);
 // Set CW keyer speed from EEPROM; updates internal timing parameters
 void CW_UpdateWPM();
 
+// Map a raw sidetone menu level (0=off, 1-6) to the BK4819 Tone1 tuning-gain
+// value (0-127) used for the actual register write.
+uint8_t CW_SidetoneLevelToGain(uint8_t level);
+
 // Reset keyer state, to transition modes like CPO safely
 void CW_KeyerResetRuntime(void);
 

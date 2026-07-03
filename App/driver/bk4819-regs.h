@@ -388,4 +388,9 @@ enum {
     BK4819_REG_70_ENABLE_TONE2      = (1U << BK4819_REG_70_SHIFT_ENABLE_TONE2),
 };
 
+// Tone1 register value for a given gain level: a gain of 0 leaves Tone1
+// disabled entirely, since a zero tuning-gain alone is not fully silent.
+#define BK4819_REG_70_TONE1_VALUE(level) \
+    ((level) == 0 ? 0U : (BK4819_REG_70_ENABLE_TONE1 | ((level) << BK4819_REG_70_SHIFT_TONE1_TUNING_GAIN)))
+
 #endif

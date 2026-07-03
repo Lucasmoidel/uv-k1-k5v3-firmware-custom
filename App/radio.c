@@ -582,43 +582,6 @@ void RADIO_ConfigureSquelchAndOutputPower(VFO_Info_t *pInfo)
         pInfo->SquelchCloseNoiseThresh  = 127;   // 127 ~ 0
         pInfo->SquelchOpenGlitchThresh  = 255;   // 255 ~ 0
     }
-#ifdef ENABLE_CW_MODULATOR
-    else if (pInfo->Modulation == MODULATION_CW || pInfo->Modulation == MODULATION_USB)
-    {   // CW/SSB squelch >= 1: RSSI-only hardware squelch.
-        //
-        // The BK4819 noise and glitch measurements are derived from the FM
-        // discriminator output, which is bypassed in AF_BASEBAND2 mode. They
-        // return garbage values and would prevent the squelch from ever closing.
-        // Set them to non-interfering values so only RSSI controls the squelch.
-        //
-        // When gMonitor=true (CW/SSB default), the function dispatch is
-        // FUNCTION_NOP so these thresholds don't affect the always-open monitor
-        // behaviour. When the user toggles squelch on (gMonitor=false), the
-        // RSSI thresholds make the BK4819 fire SQUELCH_FOUND when the signal
-        // drops, allowing the state machine to close the audio path.
-        Base += gEeprom.SQUELCH_LEVEL;
-        PY25Q16_ReadBuffer(Base + 0x00, &pInfo->SquelchOpenRSSIThresh,  1);
-        PY25Q16_ReadBuffer(Base + 0x10, &pInfo->SquelchCloseRSSIThresh, 1);
-
-        // Noise: force to always-agree values so noise never prevents open or close
-        pInfo->SquelchOpenNoiseThresh   = 127;  // noise < 127 → always allows open
-        pInfo->SquelchCloseNoiseThresh  = 0;    // noise > 0   → always allows close
-
-        // Glitch: same — force non-interfering
-        pInfo->SquelchCloseGlitchThresh = 0;    // glitch > 0   → always allows close
-        pInfo->SquelchOpenGlitchThresh  = 255;  // glitch < 255 → always allows open
-
-#if ENABLE_SQUELCH_MORE_SENSITIVE
-        uint16_t rssi_open  = pInfo->SquelchOpenRSSIThresh;
-        uint16_t rssi_close = pInfo->SquelchCloseRSSIThresh;
-        rssi_open = (rssi_open * 1) / 2;
-        if (rssi_close == rssi_open && rssi_close >= 2)
-            rssi_close -= 2;
-        pInfo->SquelchOpenRSSIThresh  = (rssi_open  > 255) ? 255 : rssi_open;
-        pInfo->SquelchCloseRSSIThresh = (rssi_close > 255) ? 255 : rssi_close;
-#endif
-    }
-#endif
     else
     {   // squelch >= 1
         Base += gEeprom.SQUELCH_LEVEL;                                        // my eeprom squelch-1
@@ -1592,9 +1555,7 @@ void RADIO_CW_BeginResume(void)
 
 	// Set local AF sidetone freq in Hz
 	BK4819_SetScrambleFrequencyControlWord(gEeprom.CW_TONE_FREQUENCY * 10);
-	BK4819_WriteRegister(BK4819_REG_70,
-		BK4819_REG_70_ENABLE_TONE1 |
-		(gEeprom.CW_SIDETONE_LEVEL << BK4819_REG_70_SHIFT_TONE1_TUNING_GAIN));
+	BK4819_WriteRegister(BK4819_REG_70, BK4819_REG_70_TONE1_VALUE(CW_SidetoneLevelToGain(gEeprom.CW_SIDETONE_LEVEL)));
 	
 	// Setup the Tx/Rx blocks for CW transmission
 	BK4819_EnableTXLink();

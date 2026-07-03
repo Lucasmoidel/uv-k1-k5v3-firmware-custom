@@ -179,6 +179,32 @@ void CW_KeyerReconfigure(bool enable)
     s_cfg_dirty = true; // Defer init until idle or gap
 }
 
+// Sidetone tuning-gain curve: level 0 is off (handled by BK4819_REG_70_TONE1_VALUE).
+// Levels 1-6 are spread linearly from CW_SIDETONE_MIN_GAIN to CW_SIDETONE_MAX_GAIN so
+// the lowest non-off level doesn't have to start all the way down at zero gain.
+// Retune by editing these two constants and rebuilding; the table below is
+// evaluated at compile time so no multiply/divide happens on the CW critical path.
+#define CW_SIDETONE_LEVELS    6    // number of non-off menu levels (1-6)
+#define CW_SIDETONE_MIN_GAIN  1    // gain at level 1
+#define CW_SIDETONE_MAX_GAIN  127  // gain at level 6 (BK4819 7-bit tuning-gain field max)
+
+#define CW_SIDETONE_GAIN_AT(level) \
+    (CW_SIDETONE_MIN_GAIN + ((CW_SIDETONE_MAX_GAIN - CW_SIDETONE_MIN_GAIN) * ((level) - 1)) / (CW_SIDETONE_LEVELS - 1))
+
+static const uint8_t s_sidetone_gain[CW_SIDETONE_LEVELS + 1] = {
+    0, // level 0 = off
+    CW_SIDETONE_GAIN_AT(1), CW_SIDETONE_GAIN_AT(2), CW_SIDETONE_GAIN_AT(3),
+    CW_SIDETONE_GAIN_AT(4), CW_SIDETONE_GAIN_AT(5), CW_SIDETONE_GAIN_AT(6),
+};
+
+uint8_t CW_SidetoneLevelToGain(uint8_t level)
+{
+    if (level > CW_SIDETONE_LEVELS) {
+        level = CW_SIDETONE_LEVELS;
+    }
+    return s_sidetone_gain[level];
+}
+
 void CW_UpdateWPM()
 {
     const uint32_t wpm = gEeprom.CW_KEY_WPM;
