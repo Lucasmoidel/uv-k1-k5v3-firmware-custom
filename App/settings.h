@@ -46,7 +46,7 @@ typedef enum POWER_OnDisplayMode_t POWER_OnDisplayMode_t;
 // Bit flags for CW keyer input configuration
 #define CW_KEY_FLAG_REVERSED      0x01  // 0=normal, 1=reversed
 #define CW_KEY_FLAG_PORT_RING     0x02  // 0=no port ring, 1=use port ring input
-#define CW_KEY_FLAG_SIDE1         0x04  // 0=not side1, 1=use side1 button (plus PTT)
+#define CW_KEY_FLAG_SIDE1         0x04  // 0=not side1, 1=use SIDE1 as the ring paddle contact (PTT is tip)
 #define CW_KEY_FLAG_NO_KEYER      0x08  // 0=keyer enabled, 1=handkey only
 #define CW_KEY_FLAG_PORT_GROUND   0x10  // 0=no port ground, 1=use port ground
 #define CW_KEY_FLAG_USB_PORT      0x20  // 0=not USB port, 1=use USB port (PA11/PA12) as paddle

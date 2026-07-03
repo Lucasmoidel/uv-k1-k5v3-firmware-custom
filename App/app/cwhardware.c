@@ -191,13 +191,14 @@ bool CW_ReadKeysForMode(uint8_t mode, bool *dit_out, bool *dah_out)
     bool hw_tip = false;
     CW_ReadPtt(&hw_tip);
 
-    // Read button ring input if enabled and OR with PTT (SIDE1 is "side1 button plus PTT")
+    // SIDE1 is the second iambic paddle contact (ring - dah standard), 
+    // independent of PTT (tip, dit standard). This mode isn't
+    // flagged NO_KEYER, so it runs the full iambic keyer state machine and
+    // needs two separate contacts.
     if (mode & CW_KEY_FLAG_SIDE1) {
-        bool hw_side1 = false;
-        CW_ReadSideButton(&hw_side1);
-        hw_tip |= hw_side1;
+        CW_ReadSideButton(&hw_ring);
     }
-    
+
     // Read port ring input if enabled and OR with button ring.
     // Short-circuit: if SD1 already resolved true, skip the expensive heavy deglitch —
     // the OR result is the same and we avoid ~500us of sampling overhead on every poll.
