@@ -32,7 +32,6 @@
 #include "driver/systick.h"
 #include "driver/i2c.h"
 #include "driver/uart.h"
-#include "driver/adc.h"
 #include "driver/millis.h"
 #ifdef ENABLE_USB
 #include "driver/vcp.h"
