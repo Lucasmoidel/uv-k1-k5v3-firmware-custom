@@ -1,6 +1,6 @@
 # NR7Y CW mod for F4HWN Fusion
 
-## 📦 [**Download prebuilt firmware to flash → Releases**](https://github.com/briand/uv-k5-firmware-custom-cw/releases)
+## 📦 [**Download prebuilt firmware to flash → Releases**](https://github.com/briand/uv-k1-k5v3-firmware-custom/releases)
 Pre-built `.uf2`/`.bin` files ready to flash are published every release, you don't need to compile them.
 
 ## 📖 [**Documentation site →**](https://github.com/briand/cw-firmware-docs)
