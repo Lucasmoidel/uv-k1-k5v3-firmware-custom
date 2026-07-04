@@ -163,8 +163,8 @@ static bool CW_ReadGpioDeglitched(GPIO_TypeDef *gpio_port, uint32_t pin_mask, bo
 // GLITCH_SAMPLES. The gap between them is the dead zone that rejects
 // ambiguous / RF-corrupted windows. Widen the gap for more RF immunity;
 // narrow it if legitimate closures get rejected as indeterminate.
-#define GLITCH_ASSERT_COUNT     7u   // >=GLITCH_ASSERT_COUNT/GLITCH_SAMPLES (37.5%)  -> closed
-#define GLITCH_DEASSERT_COUNT   2u    // <=GLITCH_DEASSERT_COUNT/GLITCH_SAMPLES (12.5%)  -> open
+#define GLITCH_ASSERT_COUNT     10u   // >=GLITCH_ASSERT_COUNT/GLITCH_SAMPLES (62.5%)  -> closed
+#define GLITCH_DEASSERT_COUNT   4u    // <=GLITCH_DEASSERT_COUNT/GLITCH_SAMPLES (25%)  -> open
 // 1 if a closed key pulls the pin LOW (active-low); 0 if active-high.
 #define GLITCH_ACTIVE_LOW       1u
 // Dither the sample spacing so an evenly-clocked sampler can't alias onto a
