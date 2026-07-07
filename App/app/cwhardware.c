@@ -149,7 +149,7 @@ static bool CW_ReadGpioDeglitched(GPIO_TypeDef *gpio_port, uint32_t pin_mask, bo
 // confident per-pin state through the RF burst instead.
 
 // Samples taken per read window. More = better averaging, more time.
-#define GLITCH_SAMPLES          16u
+#define GLITCH_SAMPLES          64u
 // Nominal delay between samples, microseconds. Total window is roughly
 // (GLITCH_SAMPLES-1) * GLITCH_SAMPLE_US. Confirmed via the debug mask that a
 // real, brief tap can land entirely inside one window and only cover a
@@ -158,18 +158,28 @@ static bool CW_ReadGpioDeglitched(GPIO_TypeDef *gpio_port, uint32_t pin_mask, bo
 // though it's a genuine closure) - shrinking the window makes a real tap of
 // a given duration cover a larger fraction of it, rather than getting
 // outvoted by open samples on either side from unlucky window alignment.
-#define GLITCH_SAMPLE_US        3u
+#define GLITCH_SAMPLE_US        1u
 // Super-majority thresholds, in counts of "active" samples out of
 // GLITCH_SAMPLES. The gap between them is the dead zone that rejects
 // ambiguous / RF-corrupted windows. Widen the gap for more RF immunity;
 // narrow it if legitimate closures get rejected as indeterminate.
-#define GLITCH_ASSERT_COUNT     10u   // >=GLITCH_ASSERT_COUNT/GLITCH_SAMPLES (62.5%)  -> closed
-#define GLITCH_DEASSERT_COUNT   4u    // <=GLITCH_DEASSERT_COUNT/GLITCH_SAMPLES (25%)  -> open
+#define GLITCH_ASSERT_COUNT     24u   // >=GLITCH_ASSERT_COUNT/GLITCH_SAMPLES (62.5%)  -> closed
+#define GLITCH_DEASSERT_COUNT   8u    // <=GLITCH_DEASSERT_COUNT/GLITCH_SAMPLES (25%)  -> open
+// Minimum unbroken run of same-value samples required, on top of the count
+// thresholds above, before a window is trusted. Plain majority counting can't
+// tell a genuine closure from RF toggling that happens to land on the right
+// total: e.g. 1,1,1,0,1,1,1,1,0,0,0,1,1,0,1,0 clears GLITCH_ASSERT_COUNT
+// (10/16 active) but is really five separate runs bouncing every few us -
+// exactly what a real, settled contact never does. Requiring a long
+// contiguous run (not just a total) is what CW_ReadGpioDeglitched already
+// does for the non-RF-tolerant inputs; this brings the same idea here
+// alongside the majority/dead-zone logic instead of replacing it.
+#define GLITCH_MIN_RUN          48u
 // 1 if a closed key pulls the pin LOW (active-low); 0 if active-high.
 #define GLITCH_ACTIVE_LOW       1u
 // Dither the sample spacing so an evenly-clocked sampler can't alias onto a
 // periodic RF-induced oscillation and read a false-steady level.
-#define GLITCH_DITHER           1u
+//#define GLITCH_DITHER           1u
 // Peak-to-peak dither in microseconds (only if GLITCH_DITHER = 1).
 #define GLITCH_DITHER_US        4u
 
@@ -216,13 +226,33 @@ static glitch_state_t glitch_gpio_read(GPIO_TypeDef *gpio_port, uint32_t pin_mas
 {
     uint32_t active = 0u;
     uint32_t mask = 0u;
-    
+
+    // Longest unbroken run seen so far, split by which side (active/inactive)
+    // the run was on - a run only counts toward GLITCH_MIN_RUN for the side
+    // it actually occurred on. prev_raw has no valid sample yet at i==0, so
+    // the first sample always starts a fresh run of length 1 rather than
+    // (wrongly) extending a run against an uninitialized value.
+    uint32_t run = 0u;
+    uint32_t prev_raw = 0u;
+    uint32_t longest_active_run = 0u;
+    uint32_t longest_inactive_run = 0u;
+
     for (uint32_t i = 0u; i < GLITCH_SAMPLES; i++) {
         uint32_t raw = LL_GPIO_IsInputPinSet(gpio_port, pin_mask) ? 1u : 0u;
-        if (GLITCH_IS_ACTIVE(raw)) {
+        bool is_active = GLITCH_IS_ACTIVE(raw);
+        if (is_active) {
             active++;
             if (i < 32u)
                 mask |= (1u << i);
+        }
+
+        run = (i > 0u && raw == prev_raw) ? (run + 1u) : 1u;
+        prev_raw = raw;
+
+        if (is_active) {
+            if (run > longest_active_run)   longest_active_run = run;
+        } else {
+            if (run > longest_inactive_run) longest_inactive_run = run;
         }
 
         // No delay after the last sample.
@@ -235,15 +265,15 @@ static glitch_state_t glitch_gpio_read(GPIO_TypeDef *gpio_port, uint32_t pin_mas
                             : (GLITCH_SAMPLE_US + jit);
             SYSTICK_DelayUs(d);
 #else
-            SYSTICK_DelayUs(GLITCH_SAMPLE_US);
+            //SYSTICK_DelayUs(GLITCH_SAMPLE_US);
 #endif
         }
     }
     if (out_active) *out_active = active;
     if (out_mask)   *out_mask   = mask;
 
-    if (active >= GLITCH_ASSERT_COUNT)   return GLITCH_CLOSED;
-    if (active <= GLITCH_DEASSERT_COUNT) return GLITCH_OPEN;
+    if (active >= GLITCH_ASSERT_COUNT   && longest_active_run   >= GLITCH_MIN_RUN) return GLITCH_CLOSED;
+    if (active <= GLITCH_DEASSERT_COUNT && longest_inactive_run >= GLITCH_MIN_RUN) return GLITCH_OPEN;
     return GLITCH_INDETERMINATE;
 }
 
@@ -347,21 +377,28 @@ void CW_ReadUSBPaddleRaw(bool *tip_out, bool *ring_out)
 
     uint32_t tip_active = 0, tip_mask = 0, ring_active = 0, ring_mask = 0;
 
-    LL_GPIO_SetPinPull(GPIOA, LL_GPIO_PIN_11, LL_GPIO_PULL_DOWN);
+
+
     LL_GPIO_SetPinPull(GPIOA, LL_GPIO_PIN_12, LL_GPIO_PULL_DOWN);
-    SYSTICK_DelayUs(GLITCH_SETTLE_US);
-    
+    LL_GPIO_SetPinMode(GPIOA, LL_GPIO_PIN_12, LL_GPIO_MODE_OUTPUT);    
+    LL_GPIO_ResetOutputPin(GPIOA, LL_GPIO_PIN_12); 
+    LL_GPIO_SetPinPull(GPIOA, LL_GPIO_PIN_11, LL_GPIO_PULL_DOWN);
+    LL_GPIO_SetPinMode(GPIOA, LL_GPIO_PIN_11, LL_GPIO_MODE_OUTPUT);    
+    LL_GPIO_ResetOutputPin(GPIOA, LL_GPIO_PIN_11); 
+    SYSTICK_DelayUs(20);
+
+    LL_GPIO_SetPinMode(GPIOA, LL_GPIO_PIN_11, LL_GPIO_MODE_INPUT);
     LL_GPIO_SetPinPull(GPIOA, LL_GPIO_PIN_11, LL_GPIO_PULL_UP);
+    LL_GPIO_SetPinMode(GPIOA, LL_GPIO_PIN_12, LL_GPIO_MODE_INPUT);
     LL_GPIO_SetPinPull(GPIOA, LL_GPIO_PIN_12, LL_GPIO_PULL_UP);
-    SYSTICK_DelayUs(GLITCH_SETTLE_US);
-
-    glitch_state_t tip = glitch_gpio_read(GPIOA, LL_GPIO_PIN_12, &tip_active, &tip_mask);
-    if (tip != GLITCH_INDETERMINATE)
-        s_last_tip = (tip == GLITCH_CLOSED);
-
+    //SYSTICK_DelayUs(5);
     glitch_state_t ring = glitch_gpio_read(GPIOA, LL_GPIO_PIN_11, &ring_active, &ring_mask);
     if (ring != GLITCH_INDETERMINATE)
         s_last_ring = (ring == GLITCH_CLOSED);
+    
+    glitch_state_t tip = glitch_gpio_read(GPIOA, LL_GPIO_PIN_12, &tip_active, &tip_mask);
+    if (tip != GLITCH_INDETERMINATE)
+        s_last_tip = (tip == GLITCH_CLOSED);
 
 
     *tip_out  = s_last_tip;
@@ -510,8 +547,9 @@ void CW_ConfigureUsbPaddlePins(bool enable)
         SET_BIT(USBD->CR, USBD_CR_Reset);
         LL_APB1_GRP1_DisableClock(LL_APB1_GRP1_PERIPH_USBD);
 
-        // Disable the SYSCFG analog filter for PA11 and PA12 (PA_ENS bits).
-        SET_BIT(SYSCFG->PAENS, LL_GPIO_PIN_11 | LL_GPIO_PIN_12);
+        // DON'T Enable the SYSCFG analog filter for PA11 and PA12 (PA_ENS bits).
+        // when the glitches are filtered out, we can't tell what's real and what's RF.
+        //SET_BIT(SYSCFG->PAENS, LL_GPIO_PIN_11 | LL_GPIO_PIN_12);
 
         // Both paddle pins are plain pulled-up inputs, referenced against
         // real ground via the paddle's own sleeve/common wire - each switch
@@ -523,7 +561,7 @@ void CW_ConfigureUsbPaddlePins(bool enable)
         init.Pin        = LL_GPIO_PIN_12 | LL_GPIO_PIN_11;
         init.Mode       = LL_GPIO_MODE_INPUT;
         init.Pull       = LL_GPIO_PULL_UP;
-        init.Speed      = LL_GPIO_SPEED_FREQ_VERY_HIGH;
+        init.Speed      = LL_GPIO_SPEED_FREQ_LOW;
         LL_GPIO_Init(GPIOA, &init);
 
         SYSTICK_DelayUs(GLITCH_SETTLE_US); // let the pins settle once, up front
