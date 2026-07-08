@@ -645,22 +645,23 @@ static CW_Action_t CW_HandleBugState(void)
         return CW_ACTION_CARRIER_HOLD_ON;
 
     case BUG_STATE_DIT_GAP:
+        // Dah is a raw handkey and takes priority immediately, even mid-gap.
         if (in.dah) {
             s_bug_phase_start = now;
             s_bug_state = BUG_STATE_DAH_HOLD;
             return CW_ACTION_CARRIER_ON;
         }
-        if (!in.dit) {
-            // Released during gap — no next element, start the char gap
-            s_bug_phase_start = now;
-            s_bug_state = BUG_STATE_CHAR_GAP;
+        if (millis_since(s_bug_phase_start) < (uint32_t)s_gap_count) {
+            // Let the gap complete before deciding what to do next.
             return CW_ACTION_NONE;
         }
-        if (millis_since(s_bug_phase_start) >= (uint32_t)s_gap_count) {
-            s_bug_phase_start = now;
+        s_bug_phase_start = now;
+        if (in.dit) {
             s_bug_state = BUG_STATE_DIT_ELEMENT;
             return CW_ACTION_CARRIER_ON;
         }
+        // Released by the end of the full gap — no next element, start the char gap
+        s_bug_state = BUG_STATE_CHAR_GAP;
         return CW_ACTION_NONE;
 
     case BUG_STATE_DAH_HOLD:
