@@ -32,8 +32,10 @@
 #include "driver/systick.h"
 #include "driver/i2c.h"
 #include "driver/uart.h"
-#include "driver/adc.h"
 #include "driver/millis.h"
+#ifdef ENABLE_USB
+#include "driver/vcp.h"
+#endif
 #include "external/printf/printf.h"
 
 // Local debug toggle for CW hardware reads
@@ -41,13 +43,12 @@
 #define ENABLE_CW_HARDWARE_DEBUG 0
 #endif
 
-#define ENABLE_CEC_KEYER_DEBUG 0
-
 // Local state for last sampled paddles (edge detection)
 static bool     s_last_dit   = false;
 static bool     s_last_dah   = false;
 static uint32_t s_dit_count  = 0;  // consecutive raw-true reads for dit
 static uint32_t s_dah_count  = 0;  // consecutive raw-true reads for dah
+static bool     s_last_is_dah = false;  // which paddle was pressed most recently (for Ultimatic mode)
 
 // Read button ring input (SIDE1)
 static void CW_ReadSideButton(bool *ring_out)
@@ -106,8 +107,8 @@ static void CW_ReadSideButton(bool *ring_out)
 }
 
 
-// Generic GPIO deglitch function - reads with de-noise
-// Returns true if pin is active (low), false if inactive (high)
+// Generic GPIO deglitch function - reads with de-noise using consecutive-sample algorithm.
+// Returns true if pin is active (low), false if inactive (high).
 static bool CW_ReadGpioDeglitched(GPIO_TypeDef *gpio_port, uint32_t pin_mask, bool heavy)
 {
     bool result = false;
@@ -128,34 +129,291 @@ static bool CW_ReadGpioDeglitched(GPIO_TypeDef *gpio_port, uint32_t pin_mask, bo
         // Stable reading achieved - active low
         result = !reg;
     }
-
+#if ENABLE_CW_HARDWARE_DEBUG
+    char dbg_buf[80];
+        sprintf_(dbg_buf, "s=%u r=0x%08X m=%u r=%u\r\n", (unsigned)(i>=goal), (unsigned)reg, (unsigned)i, (unsigned)result);
+        UART_Send(dbg_buf, strlen(dbg_buf));
+#endif
     return result;
+}
+
+// ==================== RF-tolerant GPIO deglitch (USB paddle) ====================
+// Oversamples the pin many times in a short window and decides by super-majority
+// with a dead zone (hysteresis):
+//   - steady closure -> nearly all samples active   -> GLITCH_CLOSED
+//   - steady open     -> nearly all samples inactive -> GLITCH_OPEN
+//   - RF oscillation  -> samples disagree (~50/50)    -> GLITCH_INDETERMINATE
+// GLITCH_INDETERMINATE is what breaks a "stuck keyed" feedback loop: while the
+// PA is splattering the line, the reader refuses to assert a confident state
+// rather than latching a false one - CW_ReadUSBPaddleRaw holds its last
+// confident per-pin state through the RF burst instead.
+
+// Samples taken per read window. More = better averaging, more time.
+#define GLITCH_SAMPLES          64u
+// Nominal delay between samples, microseconds. Total window is roughly
+// (GLITCH_SAMPLES-1) * GLITCH_SAMPLE_US. Confirmed via the debug mask that a
+// real, brief tap can land entirely inside one window and only cover a
+// fraction of it (e.g. 10/32 active, a clean contiguous run, correctly
+// rejected as indeterminate because it's below GLITCH_ASSERT_COUNT even
+// though it's a genuine closure) - shrinking the window makes a real tap of
+// a given duration cover a larger fraction of it, rather than getting
+// outvoted by open samples on either side from unlucky window alignment.
+#define GLITCH_SAMPLE_US        1u
+// Super-majority thresholds, in counts of "active" samples out of
+// GLITCH_SAMPLES. The gap between them is the dead zone that rejects
+// ambiguous / RF-corrupted windows. Widen the gap for more RF immunity;
+// narrow it if legitimate closures get rejected as indeterminate.
+#define GLITCH_ASSERT_COUNT     24u   // >=GLITCH_ASSERT_COUNT/GLITCH_SAMPLES (62.5%)  -> closed
+#define GLITCH_DEASSERT_COUNT   8u    // <=GLITCH_DEASSERT_COUNT/GLITCH_SAMPLES (25%)  -> open
+// Minimum unbroken run of same-value samples required, on top of the count
+// thresholds above, before a window is trusted. Plain majority counting can't
+// tell a genuine closure from RF toggling that happens to land on the right
+// total: e.g. 1,1,1,0,1,1,1,1,0,0,0,1,1,0,1,0 clears GLITCH_ASSERT_COUNT
+// (10/16 active) but is really five separate runs bouncing every few us -
+// exactly what a real, settled contact never does. Requiring a long
+// contiguous run (not just a total) is what CW_ReadGpioDeglitched already
+// does for the non-RF-tolerant inputs; this brings the same idea here
+// alongside the majority/dead-zone logic instead of replacing it.
+#define GLITCH_MIN_RUN          48u
+// 1 if a closed key pulls the pin LOW (active-low); 0 if active-high.
+#define GLITCH_ACTIVE_LOW       1u
+// Dither the sample spacing so an evenly-clocked sampler can't alias onto a
+// periodic RF-induced oscillation and read a false-steady level.
+//#define GLITCH_DITHER           1u
+// Peak-to-peak dither in microseconds (only if GLITCH_DITHER = 1).
+#define GLITCH_DITHER_US        4u
+
+typedef enum {
+    GLITCH_OPEN          = 0,  // confident: key open
+    GLITCH_CLOSED        = 1,  // confident: key closed
+    GLITCH_INDETERMINATE = 2   // not confident (bounce / RF noise)
+} glitch_state_t;
+
+#if GLITCH_ACTIVE_LOW
+#define GLITCH_IS_ACTIVE(raw)  ((raw) == 0u)
+#else
+#define GLITCH_IS_ACTIVE(raw)  ((raw) != 0u)
+#endif
+
+#if GLITCH_DITHER
+// Cheap xorshift32 for spacing dither. Self-seeds; state is fine to share.
+static uint32_t glitch_prng(void)
+{
+    static uint32_t s = 0x1234567u;
+    s ^= s << 13;
+    s ^= s >> 17;
+    s ^= s << 5;
+    return s;
+}
+#endif
+
+// Settle time after CW_ConfigureUsbPaddlePins() switches the pins to input,
+// before the first sample is taken.
+#define GLITCH_SETTLE_US 50u
+
+// One RF-tolerant read of an already-configured input pin.
+// Worst-case wall time ~= (GLITCH_SAMPLES - 1) * max_gap + sample overhead.
+// With the defaults: 15 gaps * ~11 us ~= 165 us + a few us -> well under 200 us.
+// out_active/out_mask (optional, may be NULL) receive the raw active-sample
+// count and a bit-per-sample mask (bit 0 = first sample; only the low
+// GLITCH_SAMPLES bits are meaningful, and only the low 32 samples are
+// captured if GLITCH_SAMPLES > 32) - purely diagnostic, doesn't affect the
+// result. The mask is what shows *where in the window* activity landed -
+// e.g. all-low-then-high (0x0000FFFF-ish) points at a startup transient
+// (pull-down -> pull-up charge time) rather than genuine RF/bounce, which
+// would look scattered instead.
+static glitch_state_t glitch_gpio_read(GPIO_TypeDef *gpio_port, uint32_t pin_mask, uint32_t *out_active, uint32_t *out_mask)
+{
+    uint32_t active = 0u;
+    uint32_t mask = 0u;
+
+    // Longest unbroken run seen so far, split by which side (active/inactive)
+    // the run was on - a run only counts toward GLITCH_MIN_RUN for the side
+    // it actually occurred on. prev_raw has no valid sample yet at i==0, so
+    // the first sample always starts a fresh run of length 1 rather than
+    // (wrongly) extending a run against an uninitialized value.
+    uint32_t run = 0u;
+    uint32_t prev_raw = 0u;
+    uint32_t longest_active_run = 0u;
+    uint32_t longest_inactive_run = 0u;
+
+    for (uint32_t i = 0u; i < GLITCH_SAMPLES; i++) {
+        uint32_t raw = LL_GPIO_IsInputPinSet(gpio_port, pin_mask) ? 1u : 0u;
+        bool is_active = GLITCH_IS_ACTIVE(raw);
+        if (is_active) {
+            active++;
+            if (i < 32u)
+                mask |= (1u << i);
+        }
+
+        run = (i > 0u && raw == prev_raw) ? (run + 1u) : 1u;
+        prev_raw = raw;
+
+        if (is_active) {
+            if (run > longest_active_run)   longest_active_run = run;
+        } else {
+            if (run > longest_inactive_run) longest_inactive_run = run;
+        }
+
+        // No delay after the last sample.
+        if (i + 1u < GLITCH_SAMPLES) {
+#if GLITCH_DITHER
+            uint32_t half = GLITCH_DITHER_US / 2u;
+            uint32_t jit  = glitch_prng() % (GLITCH_DITHER_US + 1u);
+            uint32_t d    = (GLITCH_SAMPLE_US > half)
+                            ? (GLITCH_SAMPLE_US - half + jit)
+                            : (GLITCH_SAMPLE_US + jit);
+            SYSTICK_DelayUs(d);
+#else
+            //SYSTICK_DelayUs(GLITCH_SAMPLE_US);
+#endif
+        }
+    }
+    if (out_active) *out_active = active;
+    if (out_mask)   *out_mask   = mask;
+
+    if (active >= GLITCH_ASSERT_COUNT   && longest_active_run   >= GLITCH_MIN_RUN) return GLITCH_CLOSED;
+    if (active <= GLITCH_DEASSERT_COUNT && longest_inactive_run >= GLITCH_MIN_RUN) return GLITCH_OPEN;
+    return GLITCH_INDETERMINATE;
 }
 
 // Read the PTT/tip with de-noise
 static void CW_ReadPtt(bool *ptt_out)
 {
-    // TODO: add back the de-glitch routine
-    //*ptt_out = GPIO_IsPttPressed();
     *ptt_out = CW_ReadGpioDeglitched(GPIOB, LL_GPIO_PIN_10, false);
-
 }
 
-// static uint16_t ReadCH3()
-// {
-//     // OLD SINGLE SAMPLE CODE (keep for reference):
-//     // Trigger ADC conversion
-//     (*(volatile uint32_t *)0x400BA004U) = 0x1U;  // SARADC_START
+// Temporary diagnostic - flip to 1, rebuild, and watch the log while testing.
+// Remove this flag and everything below it in this section once things are
+// settled; not meant to be a permanent debug flag.
+#ifndef USB_PADDLE_DEBUG
+#define USB_PADDLE_DEBUG 0
+#endif
+
+#if USB_PADDLE_DEBUG
+// UART_Send() is blocking (~20ms+ for one of these lines at this baud rate).
+// A previous version of this diagnostic drained one queued entry per
+// CW_ReadUSBPaddleRaw() call, intending to keep printing off the call that
+// detected the edge - but during a RAPID, sustained oscillation (edges on
+// nearly every call) the queue never empties, so nearly every call ends up
+// paying the ~20ms tax anyway. That's a real problem here specifically:
+// glitch_gpio_read() leaves the pin pulled down between reads, so an
+// artificially long ~20ms gap (from printing) gives it time to fully
+// discharge that it would never get at the real, sub-millisecond polling
+// rate - which can manufacture a slow charge-up-doesn't-finish-in-the-window
+// artifact that wouldn't happen in normal (non-debug) operation at all.
+//
+// So: capture silently into a larger buffer with ZERO UART calls during the
+// interesting window, and only dump everything in one burst once the buffer
+// fills. The dump itself blocks for a while, but only *after* the behavior
+// being observed has already happened and been faithfully recorded.
+typedef struct {
+    uint32_t t_ms;
+    uint32_t tip_active, tip_mask;
+    uint32_t ring_active, ring_mask;
+    glitch_state_t tip_state, ring_state;
+} usb_dbg_entry_t;
+
+#define USB_DBG_BUF_LEN 64
+static usb_dbg_entry_t s_dbg_buf[USB_DBG_BUF_LEN];
+static uint8_t s_dbg_count = 0;
+
+static void usb_dbg_dump_all(void)
+{
+    for (uint8_t i = 0; i < s_dbg_count; i++) {
+        usb_dbg_entry_t *e = &s_dbg_buf[i];
+        char buf[96];
+        sprintf_(buf, "USB %u t=%u/%u(%u) tm=%08X r=%u/%u(%u) rm=%08X\r\n",
+            (unsigned)e->t_ms, e->tip_active, GLITCH_SAMPLES, (unsigned)e->tip_state, e->tip_mask,
+            e->ring_active, GLITCH_SAMPLES, (unsigned)e->ring_state, e->ring_mask);
+        UART_Send(buf, strlen(buf));
+    }
+    s_dbg_count = 0;
+}
+
+// Mask is printed LSB-first == first sample first, so a leading run of 1s
+// (active-low) followed by 0s reads left-to-right as "started low, went
+// high" - a startup/charge transient signature, vs. scattered bits which
+// would point at RF/bounce.
+static uint32_t s_dbg_last_push_ms = 0;
+
+static void usb_dbg_push(uint32_t tip_active, uint32_t tip_mask, glitch_state_t tip_state,
+                          uint32_t ring_active, uint32_t ring_mask, glitch_state_t ring_state)
+{
+    if (s_dbg_count >= USB_DBG_BUF_LEN) {
+        usb_dbg_dump_all(); // buffer full - flush now (only place this ever blocks)
+    }
+    s_dbg_buf[s_dbg_count++] = (usb_dbg_entry_t){
+        .t_ms = millis(),
+        .tip_active = tip_active, .tip_mask = tip_mask, .tip_state = tip_state,
+        .ring_active = ring_active, .ring_mask = ring_mask, .ring_state = ring_state,
+    };
+    s_dbg_last_push_ms = millis();
+}
+
+// Also flush after a period with no new edges, so a short burst of activity
+// (a couple of taps) shows up without waiting for 64 entries to accumulate.
+// Only checked here (a cheap millis() compare, no UART) and only dumps once
+// things have gone quiet - by definition nothing interesting is happening
+// right now when this fires, so blocking for the dump can't corrupt an
+// in-progress observation the way dumping mid-burst would.
+static void usb_dbg_flush_if_idle(void)
+{
+    if (s_dbg_count > 0 && millis_since(s_dbg_last_push_ms) >= 300)
+        usb_dbg_dump_all();
+}
+#endif
+
+// Raw read of the USB paddle pins, independent of key-input mode flags.
+// Pins are already configured as pulled-up inputs by CW_ConfigureUsbPaddlePins()
+// and left alone - no per-read setup needed. Each pin is read tri-state
+// (open/closed/indeterminate) via glitch_gpio_read() and held at its last
+// confident state through an indeterminate (RF-noisy) window, so a burst of
+// RF on the line can't latch a false key-down.
+void CW_ReadUSBPaddleRaw(bool *tip_out, bool *ring_out)
+{
+    static bool s_last_tip  = false;
+    static bool s_last_ring = false;
+
+    uint32_t tip_active = 0, tip_mask = 0, ring_active = 0, ring_mask = 0;
+
+
+
+    LL_GPIO_SetPinPull(GPIOA, LL_GPIO_PIN_12, LL_GPIO_PULL_DOWN);
+    LL_GPIO_SetPinMode(GPIOA, LL_GPIO_PIN_12, LL_GPIO_MODE_OUTPUT);    
+    LL_GPIO_ResetOutputPin(GPIOA, LL_GPIO_PIN_12); 
+    LL_GPIO_SetPinPull(GPIOA, LL_GPIO_PIN_11, LL_GPIO_PULL_DOWN);
+    LL_GPIO_SetPinMode(GPIOA, LL_GPIO_PIN_11, LL_GPIO_MODE_OUTPUT);    
+    LL_GPIO_ResetOutputPin(GPIOA, LL_GPIO_PIN_11); 
+    SYSTICK_DelayUs(20);
+
+    LL_GPIO_SetPinMode(GPIOA, LL_GPIO_PIN_11, LL_GPIO_MODE_INPUT);
+    LL_GPIO_SetPinPull(GPIOA, LL_GPIO_PIN_11, LL_GPIO_PULL_UP);
+    LL_GPIO_SetPinMode(GPIOA, LL_GPIO_PIN_12, LL_GPIO_MODE_INPUT);
+    LL_GPIO_SetPinPull(GPIOA, LL_GPIO_PIN_12, LL_GPIO_PULL_UP);
+    //SYSTICK_DelayUs(5);
+    glitch_state_t ring = glitch_gpio_read(GPIOA, LL_GPIO_PIN_11, &ring_active, &ring_mask);
+    if (ring != GLITCH_INDETERMINATE)
+        s_last_ring = (ring == GLITCH_CLOSED);
     
-//     // Wait for CH3 end of conversion (0x400BA028 = CH0 + 3*sizeof(ADC_Channel_t))
-//     while (!(*(volatile uint32_t *)0x400BA028U & 0x1)) {}
-    
-//     // Clear interrupt flag for CH3
-//     (*(volatile uint32_t *)0x400BA00CU) = (1U << 3);
-    
-//     // 12-bit data (0x400BA02C = CH3 DATA register)
-//     return (uint16_t)((*(volatile uint32_t *)0x400BA02CU) & 0xFFFU);
-// }
+    glitch_state_t tip = glitch_gpio_read(GPIOA, LL_GPIO_PIN_12, &tip_active, &tip_mask);
+    if (tip != GLITCH_INDETERMINATE)
+        s_last_tip = (tip == GLITCH_CLOSED);
+
+
+    *tip_out  = s_last_tip;
+    *ring_out = s_last_ring;
+
+#if USB_PADDLE_DEBUG
+    static glitch_state_t s_last_logged_tip = GLITCH_OPEN, s_last_logged_ring = GLITCH_OPEN;
+    if (tip != s_last_logged_tip || ring != s_last_logged_ring) {
+        s_last_logged_tip = tip;
+        s_last_logged_ring = ring;
+        usb_dbg_push(tip_active, tip_mask, tip, ring_active, ring_mask, ring);
+    }
+    usb_dbg_flush_if_idle();
+#endif
+}
 
 // Read raw paddle inputs for a specific mode
 // Returns true if mode is valid, false otherwise
@@ -171,19 +429,27 @@ bool CW_ReadKeysForMode(uint8_t mode, bool *dit_out, bool *dah_out)
     bool hw_tip = false;
     CW_ReadPtt(&hw_tip);
 
-    // Read button ring input if enabled
+    // SIDE1 is the second iambic paddle contact (ring - dah standard), 
+    // independent of PTT (tip, dit standard). This mode isn't
+    // flagged NO_KEYER, so it runs the full iambic keyer state machine and
+    // needs two separate contacts.
     if (mode & CW_KEY_FLAG_SIDE1) {
         CW_ReadSideButton(&hw_ring);
     }
-    
+
     // Read port ring input if enabled and OR with button ring.
     // Short-circuit: if SD1 already resolved true, skip the expensive heavy deglitch —
     // the OR result is the same and we avoid ~500us of sampling overhead on every poll.
     if ((mode & CW_KEY_FLAG_PORT_RING) && !hw_ring) {
         // New hardware: port-ring is on PA13 (SWDIO when not used). Use deglitch helper on GPIOA bit 13.
-        hw_ring = CW_ReadGpioDeglitched(GPIOA, LL_GPIO_PIN_13, true);
+        hw_ring = CW_ReadGpioDeglitched(GPIOA, LL_GPIO_PIN_13, false);
     }
-    
+
+    // USB port mode: PA11 acts as ring/dah (DM), PA12 acts as tip/dit (DP)
+    if (mode & CW_KEY_FLAG_USB_PORT) {
+        CW_ReadUSBPaddleRaw(&hw_tip, &hw_ring);
+    }
+
     // Determine if keys are reversed
     bool reverse = (mode & CW_KEY_FLAG_REVERSED);
 
@@ -207,19 +473,33 @@ void CW_ReadKeys(CW_Input *in)
         n_dah = false;
     }
 
-    // Three-strike debounce: increment counter while raw line is active, reset on inactive.
-    if (n_dit) s_dit_count++; else s_dit_count = 0;
-    if (n_dah) s_dah_count++; else s_dah_count = 0;
+    bool deb_dit, deb_dah;
+    if (gEeprom.CW_KEY_INPUT & CW_KEY_FLAG_USB_PORT) {
+        // USB port paddle already went through its own tri-state glitch
+        // filter. Honor the single read as-is.
+        deb_dit = n_dit;
+        deb_dah = n_dah;
+    } else {
+        // Three-strike debounce: increment counter while raw line is active, reset on inactive.
+        if (n_dit) s_dit_count++; else s_dit_count = 0;
+        if (n_dah) s_dah_count++; else s_dah_count = 0;
 
-    // Debounced state: line is considered active only after 3 consecutive hits.
-    bool deb_dit = (s_dit_count >= 3);
-    bool deb_dah = (s_dah_count >= 3);
+        // Debounced state: line is considered active only after 3 consecutive hits.
+        deb_dit = (s_dit_count >= 3);
+        deb_dah = (s_dah_count >= 3);
+    }
 
     // Edges computed against previous debounced state.
     in->dit_rise = (!s_last_dit && deb_dit);
     in->dah_rise = (!s_last_dah && deb_dah);
     in->dit = deb_dit;
     in->dah = deb_dah;
+
+    // Track which paddle was pressed most recently (a fresh press is exactly
+    // a rising edge), for Ultimatic mode's "both held -> last one wins" rule.
+    if (in->dit_rise) s_last_is_dah = false;
+    else if (in->dah_rise) s_last_is_dah = true;
+    in->last_is_dah = s_last_is_dah;
 
     s_last_dit = deb_dit;
     s_last_dah = deb_dah;
@@ -255,6 +535,56 @@ void CW_ConfigurePortGround(bool enable)
 #endif
 }
 
+// Configure USB port paddle pins (PA11 = DM, PA12 = DP).
+// When enabling: both become GPIO inputs with pull-ups (active-low paddle convention).
+// When disabling: restore to alternate-function mode for USB (AF10 on PY32F071).
+// Note: The USB CDC stack continues running in the background; only the pin mux changes.
+void CW_ConfigureUsbPaddlePins(bool enable)
+{
+    LL_IOP_GRP1_EnableClock(LL_IOP_GRP1_PERIPH_GPIOA);
+    if (enable) {
+        // Assert USB reset then gate the APB1 clock so the PHY stops driving PA11/PA12.
+        SET_BIT(USBD->CR, USBD_CR_Reset);
+        LL_APB1_GRP1_DisableClock(LL_APB1_GRP1_PERIPH_USBD);
+
+        // DON'T Enable the SYSCFG analog filter for PA11 and PA12 (PA_ENS bits).
+        // when the glitches are filtered out, we can't tell what's real and what's RF.
+        //SET_BIT(SYSCFG->PAENS, LL_GPIO_PIN_11 | LL_GPIO_PIN_12);
+
+        // Both paddle pins are plain pulled-up inputs, referenced against
+        // real ground via the paddle's own sleeve/common wire - each switch
+        // shorts its own conductor straight to sleeve, not to the other
+        // conductor, so there's no need to drive one pin low to read the
+        // other. Configured once here and left alone; CW_ReadUSBPaddleRaw
+        // just samples them, no per-read reconfiguration.
+        LL_GPIO_InitTypeDef init = {0};
+        init.Pin        = LL_GPIO_PIN_12 | LL_GPIO_PIN_11;
+        init.Mode       = LL_GPIO_MODE_INPUT;
+        init.Pull       = LL_GPIO_PULL_UP;
+        init.Speed      = LL_GPIO_SPEED_FREQ_LOW;
+        LL_GPIO_Init(GPIOA, &init);
+
+        SYSTICK_DelayUs(GLITCH_SETTLE_US); // let the pins settle once, up front
+
+    } else {
+        // Restore PA11 and PA12 to USB alternate function.
+        // On PY32F071 the USB DM/DP function is AF10.
+        LL_GPIO_InitTypeDef init = {0};
+        init.Pin        = LL_GPIO_PIN_11 | LL_GPIO_PIN_12;
+        init.Mode       = LL_GPIO_MODE_ALTERNATE;
+        init.Alternate  = LL_GPIO_AF_10;
+        init.Pull       = LL_GPIO_PULL_NO;
+        init.Speed      = LL_GPIO_SPEED_FREQ_VERY_HIGH;
+        LL_GPIO_Init(GPIOA, &init);
+
+        // Clear USB reset and re-enable the APB1 clock to restore USB functionality.
+        // Thse *should* be safe to do again if they were already correct
+        CLEAR_BIT(USBD->CR, USBD_CR_Reset);
+        LL_APB1_GRP1_EnableClock(LL_APB1_GRP1_PERIPH_USBD);
+
+    }
+}
+
 // FM Radio is disabled on this firmware, we *always* configure
 // PB15 as an input, because the radio might have the line reworked
 // onto the mic input, and we don't want to affect that.
@@ -283,8 +613,9 @@ void CW_ConfigurePortRing(bool enable)
 // Reset sampled key states (used from keyer init)
 void CW_HW_ResetKeySamples(void)
 {
-    s_last_dit = false;
-    s_last_dah = false;
+    s_last_dit   = false;
+    s_last_dah   = false;
+    s_last_is_dah = false;
 }
 
 

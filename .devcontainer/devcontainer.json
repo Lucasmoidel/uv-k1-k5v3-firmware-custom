@@ -1,0 +1,10 @@
+{
+	"name": "uv-k1-k5v3-firmware-custom",
+	"image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+	"features": {
+		// compile-with-docker.sh builds its own image and runs the ARM toolchain
+		// inside it, so this codespace just needs a Docker daemon available.
+		"ghcr.io/devcontainers/features/docker-in-docker:2": {}
+	},
+	"postCreateCommand": "chmod +x compile-with-docker.sh && ./compile-with-docker.sh CW && echo '✅ Firmware built: build/CW/nr7y.cw.uf2 (flash-ready) and build/CW/nr7y.cw.bin'"
+}

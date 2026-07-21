@@ -55,6 +55,7 @@ void CPO_Enter(void)
 	BK4819_WriteRegister(BK4819_REG_3F, 0x0000);        // Disable interrupts
 	BK4819_SetAF(BK4819_AF_ALAM);
 	AUDIO_AudioPathOn();
+    CW_ClearTxDisplay();
 }
 
 void CPO_Exit(void)
@@ -102,7 +103,7 @@ void CPO_ProcessKeys(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
 	switch (Key) {
 
 	case KEY_UP:
-		if (gEeprom.CW_KEY_WPM < 40) {
+		if (gEeprom.CW_KEY_WPM < 45) {
 			gEeprom.CW_KEY_WPM++;
 #ifdef ENABLE_CW_MODULATOR
 			CW_UpdateWPM();

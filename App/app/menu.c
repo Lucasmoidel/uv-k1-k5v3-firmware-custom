@@ -406,17 +406,17 @@ int MENU_GetLimits(uint8_t menu_id, int32_t *pMin, int32_t *pMax)
 
 		case MENU_CW_KEYER_MODE:
 			*pMin = 0;
-			*pMax = 1;
+			*pMax = 3;
 			break;
 
 		case MENU_CW_KEY_WPM:
 			*pMin = 10;
-			*pMax = 40;
+			*pMax = 45;
 			break;
 
 		case MENU_CW_KEY_INPUT:
 			*pMin = 0;
-			*pMax = 7;
+			*pMax = 10;
 			break;
 
 		case MENU_CW_MSG1:
@@ -1105,12 +1105,12 @@ void MENU_AcceptSetting(void)
 			break;
 
 		case MENU_CW_SIDETONE_LEVEL:
-			// Convert menu value (0-6) to scaled value (0-126)
-			gEeprom.CW_SIDETONE_LEVEL = gSubMenuSelection * 21;
+			gEeprom.CW_SIDETONE_LEVEL = gSubMenuSelection;
 			break;
 
 		case MENU_CW_KEYER_MODE:
 			gEeprom.CW_KEYER_MODE = gSubMenuSelection;
+			CW_KeyerResetRuntime();  // avoid stale squeeze/tracker state bleeding across mode switch
 			break;
 
 		case MENU_CW_BKIN:
@@ -1118,7 +1118,7 @@ void MENU_AcceptSetting(void)
 			break;
 
 		case MENU_CW_KEY_INPUT:
-			// Map menu selection (0-7) to bit-mapped value
+			// Map menu selection (0-10) to bit-mapped value
 			{
 				uint8_t new_mode = CW_KEY_INPUT_menu_to_bitmap[gSubMenuSelection];
 				// Validate key inputs before accepting
@@ -1661,8 +1661,7 @@ void MENU_ShowCurrentSetting(void)
 			gSubMenuSelection = (gEeprom.CW_TONE_FREQUENCY - 45) / 5;
 			break;
 		case MENU_CW_SIDETONE_LEVEL:
-			// Convert scaled value (0, 21, 42, 63, 84, 105, 126) back to menu value (0-6)
-			gSubMenuSelection = gEeprom.CW_SIDETONE_LEVEL / 21;
+			gSubMenuSelection = gEeprom.CW_SIDETONE_LEVEL;
 			break;
 		case MENU_CW_KEYER_MODE:
 			gSubMenuSelection = gEeprom.CW_KEYER_MODE;
