@@ -1868,6 +1868,14 @@ void UI_DisplayMain(void)
             break;
         }
 
+#ifdef ENABLE_CW_MODULATOR
+        char crossModeStr[5];
+        if (mod == MODULATION_CW && gCW_CrossMode) {
+            strcpy(crossModeStr, "CWx");
+            t = crossModeStr;
+        }
+#endif
+
 #if ENABLE_FEAT_F4HWN
         const FREQ_Config_t *pConfig = (mode == VFO_MODE_TX) ? vfoInfo->pTX : vfoInfo->pRX;
         int8_t shift = 0;
@@ -1928,11 +1936,6 @@ void UI_DisplayMain(void)
         }
 #else
         UI_PrintStringSmallNormal(s, LCD_WIDTH + 24, 0, line + 1);
-#endif
-
-#ifdef ENABLE_CW_MODULATOR
-		if (vfoInfo->Modulation == MODULATION_CW && gCW_CrossMode)
-			UI_PrintStringSmallNormal("x", LCD_WIDTH + 40, 0, line + 1);
 #endif
 
         if (state == VFO_STATE_NORMAL || state == VFO_STATE_ALARM)

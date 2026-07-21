@@ -555,7 +555,9 @@ const uint8_t gSubMenu_SIDEFUNCTIONS_size = ARRAY_SIZE(gSubMenu_SIDEFUNCTIONS);
 const char* gSubMenu_CW_KEYER_MODE[] =
 {
 	"Mode\nA",
-	"Mode\nB"
+	"Mode\nB",
+	"Ultimatic",
+	"Bug"
 };
 
 const char* gSubMenu_CW_KEY_INPUT[] =
@@ -568,6 +570,9 @@ const char* gSubMenu_CW_KEY_INPUT[] =
 	"Port\nIambic\nReversed",
 	"Port+Btn\nIambic",
 	"Port+Btn\nIambic\nReversed",
+	"USB Port\nIambic",
+	"USB Port\nIambic\nReversed",
+	"USB Port\nHandKey",
 };
 
 const char* gSubMenu_CW_MSG[] =

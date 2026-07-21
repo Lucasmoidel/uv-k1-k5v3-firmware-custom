@@ -231,6 +231,20 @@ void ACTION_Monitor(void)
 
     RADIO_SetupRegisters(true);
 
+#ifdef ENABLE_CW_MODULATOR
+    // Silence the physical speaker amp BEFORE touching BK4819's AF mode
+    // below, so any REG_47 mux transient settles with the amp already off.
+    if (gRxVfo->Modulation == MODULATION_CW || gRxVfo->Modulation == MODULATION_USB) {
+        AUDIO_AudioPathOff();
+        gEnableSpeaker = false;
+    }
+#endif
+
+    // This close-squelch branch calls RADIO_SetupRegisters()
+    // directly instead of going through APP_StartListening(). 
+    // AF deliberately stays in the BASEBAND2 mode afterward.
+    RADIO_SetModulation(gRxVfo->Modulation);
+
 #ifdef ENABLE_FMRADIO
     if (gFmRadioMode) {
         FM_Start();

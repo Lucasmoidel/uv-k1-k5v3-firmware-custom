@@ -38,6 +38,7 @@ typedef struct {
 	uint8_t pattern;  // Bit pattern: 0=dit, 1=dah, LSB first
 } MorseCode_t;
 
+// bits in the lookup table are element-order-BACKWARDS, pop the stack.
 static const MorseCode_t MORSE_TABLE[] = {
 	// Letters A-Z (LSB first: bit 0 = first element, 0=dit, 1=dah)
 	{'A', 2, 0b10},      // .-
@@ -78,12 +79,15 @@ static const MorseCode_t MORSE_TABLE[] = {
 	{'8', 5, 0b00111},     // ---..
 	{'9', 5, 0b01111},    // ----.
 	// Punctuation
-	{'/', 5, 0b01001},    // -..-.  DN
-	{'?', 6, 0b001100},   // ..--..  IM
-	{'.', 6, 0b101010},   // .-.-.-  AAA
-	{',', 6, 0b110011},   // --..--  MIM
-	{'=', 5, 0b10001},    // -...-   BT
-	{'-', 6, 0b100001},   // -....-  BA
+	{'/', 5, 0b01001},    // -..-.
+	{'?', 6, 0b001100},   // ..--..
+	{'.', 6, 0b101010},   // .-.-.- 
+	{',', 6, 0b110011},   // --..--
+	{'=', 5, 0b10001},    // -...-   BT prosign
+	{'-', 6, 0b100001},   // -....-
+	{'+', 5, 0b01010},   // .-.-. AR prosign
+	{'(', 5, 0b01101},   // -.--.  KN prosign
+	{'&', 5, 0b00010}    // .-...  AS prosign
 };
 #define MORSE_TABLE_SIZE (sizeof(MORSE_TABLE) / sizeof(MORSE_TABLE[0]))
 
@@ -91,6 +95,7 @@ static const MorseCode_t MORSE_TABLE[] = {
 static uint8_t s_encoder_pattern = 0;  // Accumulated pattern
 static uint8_t s_encoder_length = 0;   // Number of elements in pattern
 static bool s_encoder_space_pending = false;  // Word space before next char
+static bool s_encoder_overflow = false;  // More than 6 elements sent (invalid char)
 
 // Recording state
 bool gCW_Recording = false;
@@ -118,13 +123,14 @@ static const uint16_t MACRO_ADDRS[CW_MACRO_COUNT] = {
 
 bool CW_ValidateChar(char ch)
 {
-	// Valid characters: A-Z, 0-9, '/', '?', '.', ',', '=', '-'
-	if (ch >= 'A' && ch <= 'Z')
-		return true;
-	if (ch >= '/' && ch <= '9')  // '/' to '9' are contiguous in ASCII
-		return true;
-	if (ch == '?' || ch == '.' || ch == ',' || ch == '=' || ch == '-')
-		return true;
+	// A-Z
+	if (ch >= 'A' && ch <= 'Z') return true;
+	// '+' (43) through '9' (57): +,-./ and 0-9, all contiguous and all valid
+	if (ch >= '+' && ch <= '9') return true;
+	if (ch == '&') return true;
+	if (ch == '(') return true;
+	if (ch == '=') return true;
+	if (ch == '?') return true;
 	return false;
 }
 
@@ -375,14 +381,18 @@ void CW_EncoderProcessElement(CW_ElementType_t element)
 		if (s_encoder_length < 6) {
 			// Pattern LSB first, so no shift needed for new bit
 			s_encoder_length++;
+		} else {
+			s_encoder_overflow = true;
 		}
 		break;
-		
+
 	case CW_ELEMENT_DAH:
 		// Add a dah (1) to the pattern
 		if (s_encoder_length < 6) {
 			s_encoder_pattern |= (1 << s_encoder_length);
 			s_encoder_length++;
+		} else {
+			s_encoder_overflow = true;
 		}
 		break;
 		
@@ -396,7 +406,7 @@ void CW_EncoderProcessElement(CW_ElementType_t element)
 		}
 #endif
 		if (s_encoder_length > 0) {
-			char ch = CW_DecodePattern(s_encoder_pattern, s_encoder_length);
+			char ch = s_encoder_overflow ? 0 : CW_DecodePattern(s_encoder_pattern, s_encoder_length);
 #if CW_ENCODER_DEBUG
 			{
 				char buf[64];
@@ -433,15 +443,17 @@ void CW_EncoderProcessElement(CW_ElementType_t element)
 			s_encoder_pattern = 0;
 			s_encoder_length = 0;
 			s_encoder_space_pending = false;
+			s_encoder_overflow = false;
 		}
 		break;
-		
+
 	case CW_ELEMENT_INTER_WORD_SPACE:
 		// Mark that next character should have space before it
 		// Also reset encoder state for next character
 		s_encoder_pattern = 0;
 		s_encoder_length = 0;
 		s_encoder_space_pending = true;
+		s_encoder_overflow = false;
 		break;
 	}
 }
@@ -462,6 +474,7 @@ void CW_StartRecording(uint8_t macroIndex)
 	s_encoder_pattern = 0;
 	s_encoder_length = 0;
 	s_encoder_space_pending = false;
+	s_encoder_overflow = false;
 }
 
 void CW_StopRecording(void)

@@ -745,7 +745,7 @@ _NR7Y_CW_MACRO_SIZE = 48       # Block layout: [0]=len|SIG, [1..46]=payload, [47
 _NR7Y_CW_MACRO_MAX_LEN = 46   # Payload bytes
 _NR7Y_CW_MACRO_SIG = 0x80     # Signature stored in high bit of length byte
 
-# CW key input mode display strings (menu index 0-7 stored directly in EEPROM bits 0-4)
+# CW key input mode display strings (menu index 0-10 stored directly in EEPROM bits 0-4)
 _NR7Y_CW_KEY_INPUT_MODES = [
     "PTT HandKey",           # 0: 0x08
     "Port HandKey",          # 1: 0x18
@@ -755,6 +755,17 @@ _NR7Y_CW_KEY_INPUT_MODES = [
     "Port Iambic Reversed",  # 5: 0x13
     "Port and Btn Iambic",       # 6: 0x16
     "Port and Btn Iambic Rev",   # 7: 0x17
+    "USB Port Iambic",           # 8: 0x20
+    "USB Port Iambic Rev",       # 9: 0x21
+    "USB Port HandKey",          # 10: 0x28
+]
+
+# CW keyer mode display strings (stored as a full byte 0-3 at _NR7Y_CW_SETTINGS_ADDR+4)
+_NR7Y_CW_KEYER_MODES = [
+    "Iambic A",       # 0
+    "Iambic B",       # 1
+    "Ultimatic",      # 2
+    "Semi-Auto Bug",  # 3
 ]
 
 # Extended key actions list for NR7Y firmware with CW modulator.
@@ -3639,19 +3650,19 @@ class UVK5_NR7Y_Fusion(UVK5RadioEgzumer):
             LOG.error("CW vol setting: %s", e)
 
         # Keyer Mode
-        mode_opts = ["Iambic A", "Iambic B"]
         try:
             mi = self._get_cw_keyer_mode()
             cw.append(RadioSetting("cw_keyer_mode", "Keyer Mode",
-                                   RadioSettingValueList(mode_opts, mode_opts[mi])))
+                                   RadioSettingValueList(_NR7Y_CW_KEYER_MODES,
+                                                        _NR7Y_CW_KEYER_MODES[mi])))
         except Exception as e:
             LOG.error("CW keyer mode: %s", e)
 
-        # Keyer Speed (10-30 WPM)
+        # Keyer Speed (10-45 WPM)
         try:
             wpm = self._get_cw_wpm()
             cw.append(RadioSetting("cw_wpm", "Keyer Speed (WPM)",
-                                   RadioSettingValueInteger(10, 40, wpm)))
+                                   RadioSettingValueInteger(10, 45, wpm)))
         except Exception as e:
             LOG.error("CW WPM: %s", e)
 
@@ -3769,7 +3780,7 @@ class UVK5_NR7Y_Fusion(UVK5RadioEgzumer):
                 vol_opts = ["OFF"] + [str(i) for i in range(1, 7)]
                 self._set_cw_sidetone_level(vol_opts.index(str(element.value)))
             elif name == "cw_keyer_mode":
-                self._set_cw_keyer_mode(["Iambic A", "Iambic B"].index(str(element.value)))
+                self._set_cw_keyer_mode(_NR7Y_CW_KEYER_MODES.index(str(element.value)))
             elif name == "cw_wpm":
                 self._set_cw_wpm(int(element.value))
             elif name == "cw_key_input":
@@ -3830,42 +3841,37 @@ class UVK5_NR7Y_Fusion(UVK5RadioEgzumer):
         b = self._mmap_byte(_NR7Y_CW_SETTINGS_ADDR)
         self._mmap_set(_NR7Y_CW_SETTINGS_ADDR, (b & 0x0F) | ((int(level) & 0x07) << 4))
 
-    # -- Keyer mode (bit 7 of CW byte 1) --
+    # -- Keyer mode (full byte at CW byte 4) --
 
     def _get_cw_keyer_mode(self):
-        """Return 0=Iambic A, 1=Iambic B."""
-        b = self._mmap_byte(_NR7Y_CW_SETTINGS_ADDR + 1)
-        if b == 0xFF:
-            return 0   # Default Mode A
-        return 1 if (b & 0x80) else 0
+        """Return 0=Iambic A, 1=Iambic B, 2=Ultimatic, 3=Semi-Auto Bug."""
+        b = self._mmap_byte(_NR7Y_CW_SETTINGS_ADDR + 4)
+        if b >= len(_NR7Y_CW_KEYER_MODES):
+            return 1   # Default Mode B (blank/invalid EEPROM)
+        return b
 
     def _set_cw_keyer_mode(self, mode):
-        b = self._mmap_byte(_NR7Y_CW_SETTINGS_ADDR + 1)
-        if mode:
-            b |= 0x80
-        else:
-            b &= 0x7F
-        self._mmap_set(_NR7Y_CW_SETTINGS_ADDR + 1, b)
+        mode = max(0, min(len(_NR7Y_CW_KEYER_MODES) - 1, int(mode)))
+        self._mmap_set(_NR7Y_CW_SETTINGS_ADDR + 4, mode)
 
-    # -- Keyer speed (bits 0-6 of CW byte 1) --
+    # -- Keyer speed (bits 0-6 of CW byte 1; mode no longer shares this byte) --
 
     def _get_cw_wpm(self):
-        """Return WPM (10-40)."""
+        """Return WPM (10-45)."""
         b = self._mmap_byte(_NR7Y_CW_SETTINGS_ADDR + 1)
         if b == 0xFF:
             return 18  # Default 18 WPM
         wpm = b & 0x7F
-        return wpm if 10 <= wpm <= 40 else 18
+        return wpm if 10 <= wpm <= 45 else 18
 
     def _set_cw_wpm(self, wpm):
-        wpm = max(10, min(40, int(wpm)))
-        b = self._mmap_byte(_NR7Y_CW_SETTINGS_ADDR + 1)
-        self._mmap_set(_NR7Y_CW_SETTINGS_ADDR + 1, (b & 0x80) | (wpm & 0x7F))
+        wpm = max(10, min(45, int(wpm)))
+        self._mmap_set(_NR7Y_CW_SETTINGS_ADDR + 1, wpm & 0x7F)
 
     # -- Key input mode (bits 0-4 of CW byte 2) --
 
     def _get_cw_key_input_idx(self):
-        """Return key input menu index 0-7."""
+        """Return key input menu index 0-10."""
         b = self._mmap_byte(_NR7Y_CW_SETTINGS_ADDR + 2)
         if b == 0xFF or b >= 0x80:
             return 0   # Default HandKey

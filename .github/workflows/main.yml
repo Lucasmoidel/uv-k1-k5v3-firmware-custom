@@ -37,6 +37,4 @@ jobs:
         files: |
           nr7y.cw.${{ github.ref_name }}.bin
           nr7y.cw.${{ github.ref_name }}.uf2
-          chirp/fusion.nr7y.chirp.v1.0.py
-          NR7Y CW Firmware - Paddle Rework.pdf
-          NR7Y_FIRMWARE_README.md
+          chirp/fusion.nr7y.chirp.v${{ github.ref_name }}.py

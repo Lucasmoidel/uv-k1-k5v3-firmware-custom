@@ -113,9 +113,7 @@ void CW_AppUpdate(void)
 				}
 				BACKLIGHT_TurnOn();
 				BK4819_SetAF(BK4819_AF_ALAM);
-				BK4819_WriteRegister(BK4819_REG_70,
-					BK4819_REG_70_ENABLE_TONE1 |
-					(gEeprom.CW_SIDETONE_LEVEL << BK4819_REG_70_SHIFT_TONE1_TUNING_GAIN));
+				BK4819_WriteRegister(BK4819_REG_70, BK4819_REG_70_TONE1_VALUE(CW_SidetoneLevelToGain(gEeprom.CW_SIDETONE_LEVEL)));
 				BK4819_SetScrambleFrequencyControlWord(gEeprom.CW_TONE_FREQUENCY * 10);
 				#ifdef ENABLE_FLASHLIGHT
 				if (gCW_FlashlightSending) {
@@ -153,7 +151,6 @@ void CW_AppUpdate(void)
 			gTxTimerCountdown_500ms = 0;
 			gCW_TxDisplayHoldoff_10ms = 200;
 			gPttIsPressed = true;
-			BACKLIGHT_TurnOn();
 
 			if (gCW_State == CW_INACTIVE)
 			{

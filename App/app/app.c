@@ -204,6 +204,21 @@ static void HandleIncoming(void)
         if (gDTMF_RX_index > 0)
             DTMF_clear_RX();
 #endif
+#ifdef ENABLE_CW_MODULATOR
+        // Unlike FM/AM, BK4819_AF_BASEBAND2 (used for CW/USB) isn't
+        // internally gated by the hardware squelch comparator the way
+        // AF_FM/AF_AM are - the chip keeps outputting audio regardless of
+        // squelch state. Rather than toggle BK4819's own AF mux (which the
+        // RSSI-based squelch detector may depend on staying in BASEBAND2 -
+        // unconfirmed, and toggling it was the cause of the previous
+        // "squelch never opens" bug), silence the physical speaker amp
+        // instead - the same mechanism already proven pop-free for CW/USB
+        // in the power-save fix. Skip while gMonitor forces squelch open.
+        if (!gMonitor && (gRxVfo->Modulation == MODULATION_CW || gRxVfo->Modulation == MODULATION_USB)) {
+            AUDIO_AudioPathOff();
+            gEnableSpeaker = false;
+        }
+#endif
         if (gCurrentFunction != FUNCTION_FOREGROUND) {
             FUNCTION_Select(FUNCTION_FOREGROUND);
             gUpdateDisplay = true;
@@ -1177,6 +1192,21 @@ void APP_Update(void)
         if (gRxIdleMode)
         {
             BK4819_Conditional_RX_TurnOn_and_GPIO6_Enable();
+
+            // Drain any interrupt latched while RX was powering back up from
+            // sleep (AGC/RSSI settling can trip a spurious SQUELCH_LOST).
+            // Mirrors the flush RADIO_SetupRegisters does before re-arming
+            // squelch, which is why dual watch (always goes through
+            // RADIO_SetupRegisters via DualwatchAlternate on every wake)
+            // doesn't see this glitch but a plain wake here did. REG_3F
+            // (interrupt enable) isn't touched by sleep/wake, so if a real
+            // signal is still present the BK4819 will immediately re-latch
+            // a fresh SQUELCH_LOST once we're done draining - nothing real
+            // gets missed.
+            while (BK4819_ReadRegister(BK4819_REG_0C) & 1u) {
+                BK4819_WriteRegister(BK4819_REG_02, 0);
+                SYSTEM_DelayMs(1);
+            }
 
 #ifdef ENABLE_VOX
             if (gEeprom.VOX_SWITCH && gCurrentVfo->Modulation == MODULATION_FM)
